@@ -1,0 +1,554 @@
+#!/usr/bin/env sh
+# cz — capture Claude Code artifacts (commands / skills / plugins) on the fly.
+#
+# Multi-call: symlink as cmdz|sklz|plgz to preset the artifact type.
+# Pure logic is split from IO so the core is testable without a TTY
+# (source with CZ_SOURCED=1 to load functions without running main).
+set -eu
+
+CZ_VERSION="0.2.0"
+
+# ---------------------------------------------------------------------------
+# tiny output helpers
+# ---------------------------------------------------------------------------
+err()  { printf 'cz: %s\n' "$1" >&2; }
+die()  { err "$1"; exit "${2:-1}"; }
+ok()   { printf '\033[32m✓\033[0m %s\n' "$1"; }
+info() { printf '\033[2m%s\033[0m\n' "$1"; }
+
+# ---------------------------------------------------------------------------
+# pure helpers (deterministic, side-effect free)
+# ---------------------------------------------------------------------------
+
+# slugify <str> -> kebab-case; keeps '/' for command namespacing.
+slugify() {
+  printf '%s' "$1" |
+    tr '[:upper:]' '[:lower:]' |
+    sed -e 's#[^a-z0-9/]\{1,\}#-#g' \
+        -e 's#-\{1,\}#-#g' \
+        -e 's#/-#/#g' -e 's#-/#/#g' \
+        -e 's#^-##' -e 's#-$##' \
+        -e 's#^/##' -e 's#/$##'
+}
+
+# titlecase <slug> -> "Title Case" for headings.
+titlecase() {
+  printf '%s' "$1" | tr '/-' '  ' |
+    awk '{for(i=1;i<=NF;i++)$i=toupper(substr($i,1,1)) substr($i,2)}1'
+}
+
+# find_up <marker> <start-dir> -> nearest ancestor (incl. start) holding marker.
+find_up() {
+  _marker="$1"; _dir="$2"
+  while [ -n "$_dir" ] && [ "$_dir" != "/" ]; do
+    if [ -e "$_dir/$_marker" ]; then printf '%s' "$_dir"; return 0; fi
+    _dir="$(dirname "$_dir")"
+  done
+  if [ -e "/$_marker" ]; then printf '/'; return 0; fi
+  return 1
+}
+
+# resolve_scope <scope> <start-dir> -> base dir whose .claude/ we target.
+resolve_scope() {
+  _scope="$1"; _start="${2:-$PWD}"
+  case "$_scope" in
+    user) printf '%s' "$HOME" ;;
+    here) printf '%s' "$_start" ;;
+    project)
+      # Nearest real project root by marker.
+      if _p="$(find_up .git "$_start")"; then :
+      elif _p="$(find_up package.json "$_start")"; then :
+      elif _p="$(find_up .claude "$_start")"; then :
+      else _p="$_start"; fi
+      # Never $HOME — that's the 'user' scope, not a project. (e.g. dotfiles
+      # repos / ~/.claude would otherwise hijack 'project' from any subdir.)
+      if [ "$_p" = "$HOME" ]; then _p="$_start"; fi
+      printf '%s' "$_p" ;;
+    workspace)
+      for _m in pnpm-workspace.yaml turbo.json lerna.json nx.json go.work; do
+        if _b="$(find_up "$_m" "$_start")"; then printf '%s' "$_b"; return 0; fi
+      done
+      _base="$_start"; _d="$_start"
+      while [ "$_d" != "/" ]; do
+        if [ -e "$_d/.git" ]; then _base="$_d"; fi
+        _d="$(dirname "$_d")"
+      done
+      printf '%s' "$_base" ;;
+    *) die "unknown scope: $_scope" ;;
+  esac
+}
+
+# target_path <type> <base> <name> -> primary file path to write.
+target_path() {
+  case "$1" in
+    command) printf '%s/.claude/commands/%s.md' "$2" "$3" ;;
+    skill)   printf '%s/.claude/skills/%s/SKILL.md' "$2" "$3" ;;
+    plugin)  printf '%s/.claude/plugins/%s/.claude-plugin/plugin.json' "$2" "$3" ;;
+    *) die "unknown type: $1" ;;
+  esac
+}
+
+render_command() {
+  _name="$1"; _desc="$2"; _args="$3"; _tools="$4"; _model="$5"; _body="$6"
+  printf -- '---\n'
+  printf 'description: %s\n' "${_desc:-TODO: one-line description}"
+  if [ -n "$_args" ];  then printf 'argument-hint: %s\n' "$_args"; fi
+  if [ -n "$_tools" ]; then printf 'allowed-tools: %s\n' "$_tools"; fi
+  if [ -n "$_model" ]; then printf 'model: %s\n' "$_model"; fi
+  printf -- '---\n\n'
+  printf '%s\n' "${_body:-<!-- Prompt for Claude. \$ARGUMENTS, \$1..\$9, !bash, @file all work. -->}"
+}
+
+render_skill() {
+  _name="$1"; _desc="$2"; _tools="$3"; _body="$4"
+  printf -- '---\n'
+  printf 'name: %s\n' "$_name"
+  printf 'description: %s\n' "${_desc:-TODO: one-line description (drives auto-trigger)}"
+  if [ -n "$_tools" ]; then printf 'allowed-tools: %s\n' "$_tools"; fi
+  printf -- '---\n\n'
+  printf '# %s\n\n' "$(titlecase "$_name")"
+  printf '%s\n' "${_body:-Describe what this skill does and when Claude should use it.}"
+}
+
+# plugin_manifest <name> <desc> -> plugin.json (desc quotes escaped).
+plugin_manifest() {
+  _name="$1"; _desc="$(printf '%s' "${2:-TODO: one-line description}" | sed 's/"/\\"/g')"
+  printf '{\n  "name": "%s",\n  "version": "0.1.0",\n  "description": "%s"\n}\n' \
+    "$_name" "$_desc"
+}
+
+render() {
+  case "$1" in
+    command) shift; render_command "$@" ;;
+    skill)   shift; render_skill "$1" "$2" "$4" "$6" ;;  # name desc tools body
+    plugin)  shift; plugin_manifest "$1" "$2" ;;
+    *) die "unknown type: $1" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# IO (mocked / skipped in tests)
+# ---------------------------------------------------------------------------
+have() { command -v "$1" >/dev/null 2>&1; }
+
+pick_type() {
+  printf 'command\nskill\nplugin\n' |
+    fzf --prompt='type ▸ ' --height=30% --reverse --no-multi
+}
+
+# build_scope_menu <start> -> "scope<TAB>base<TAB>state" lines.
+build_scope_menu() {
+  for _s in project workspace here user; do
+    _base="$(resolve_scope "$_s" "$1")"
+    if [ -d "$_base/.claude" ]; then _state="exists"; else _state="will create"; fi
+    printf '%s\t%s\t%s\n' "$_s" "$_base" "$_state"
+  done
+}
+
+pick_scope() {
+  build_scope_menu "$1" |
+    fzf --prompt='scope ▸ ' --height=40% --reverse --no-multi \
+        --delimiter='\t' --with-nth='1,2,3' |
+    cut -f1
+}
+
+# list_artifacts <type> <start> -> "name<TAB>path" for existing artifacts.
+list_artifacts() {
+  _type="$1"
+  for _s in project workspace user here; do
+    _base="$(resolve_scope "$_s" "${2:-$PWD}")"
+    case "$_type" in
+      command) _glob="$_base/.claude/commands" ; _suffix=".md" ;;
+      skill)   _glob="$_base/.claude/skills"   ; _suffix="/SKILL.md" ;;
+      plugin)  _glob="$_base/.claude/plugins"  ; _suffix="/.claude-plugin/plugin.json" ;;
+    esac
+    [ -d "$_glob" ] || continue
+    if [ "$_type" = command ]; then
+      find "$_glob" -type f -name '*.md' 2>/dev/null | while IFS= read -r f; do
+        _n="${f#"$_glob"/}"; _n="${_n%.md}"; printf '%s\t%s\n' "$_n" "$f"
+      done
+    else
+      find "$_glob" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r d; do
+        printf '%s\t%s%s\n' "$(basename "$d")" "$d" "$_suffix"
+      done
+    fi
+  done | sort -u
+}
+
+# pick_name <type> <start>: sets globals RESULT_NAME and RESULT_PATH.
+# RESULT_PATH non-empty => user chose an existing artifact to edit.
+pick_name() {
+  RESULT_NAME=""; RESULT_PATH=""
+  # $f is set and expanded inside the fzf-spawned preview shell, not here.
+  # shellcheck disable=SC2016
+  _preview='f={2}; if command -v bat >/dev/null 2>&1; then bat --style=plain --color=always "$f" 2>/dev/null; else cat "$f" 2>/dev/null; fi'
+  _out="$(list_artifacts "$1" "$2" |
+    fzf --prompt="$1 name ▸ " --height=70% --reverse --no-multi --print-query \
+        --delimiter='\t' --with-nth=1 \
+        --preview="$_preview" --preview-window='right,60%' || true)"
+  # line1 = typed query; line2 (if any) = selected "name<TAB>path"
+  _query="$(printf '%s\n' "$_out" | sed -n '1p')"
+  _sel="$(printf '%s\n' "$_out" | sed -n '2p')"
+  if [ -n "$_sel" ]; then
+    RESULT_NAME="$(printf '%s' "$_sel" | cut -f1)"
+    RESULT_PATH="$(printf '%s' "$_sel" | cut -f2)"
+  else
+    RESULT_NAME="$(slugify "$_query")"
+  fi
+}
+
+open_editor() {
+  _ed="${VISUAL:-${EDITOR:-vi}}"
+  "$_ed" "$1"
+}
+
+# write_artifact <path> <content>: honours DRY_RUN / FORCE.
+write_artifact() {
+  _path="$1"; _content="$2"
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    printf '── dry-run ──────────────────────────────\npath: %s\n\n%s\n' "$_path" "$_content"
+    return 0
+  fi
+  if [ -e "$_path" ] && [ "${FORCE:-0}" != 1 ]; then
+    die "refusing to overwrite $_path (use -f to force)" 3
+  fi
+  mkdir -p "$(dirname "$_path")"
+  printf '%s\n' "$_content" > "$_path"
+}
+
+# scaffold_plugin <base> <name>: create commands/ and skills/ dirs.
+scaffold_plugin() {
+  [ "${DRY_RUN:-0}" = 1 ] && return 0
+  mkdir -p "$1/.claude/plugins/$2/commands" "$1/.claude/plugins/$2/skills"
+}
+
+# invoke_hint <type> <name> -> how to call it from Claude.
+invoke_hint() {
+  case "$1" in
+    command) printf '/%s' "$(printf '%s' "$2" | tr '/' ':')" ;;
+    skill)   printf 'skill: %s' "$2" ;;
+    plugin)  printf 'plugin: %s' "$2" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# ghostwriter — draft the artifact body with Claude (claude -p, headless)
+# ---------------------------------------------------------------------------
+
+# gen_prompt <type> <name> <intent> <desc> <args> -> meta-prompt (pure).
+# Literal $ARGUMENTS/$1 in the prompt text are intentional (instructions to the
+# model), not shell expansions.
+# shellcheck disable=SC2016
+gen_prompt() {
+  _t="$1"; _n="$2"; _intent="$3"; _d="$4"; _a="$5"
+  printf 'You are generating a Claude Code %s file. Output ONLY the raw file content — no commentary, no surrounding code fences.\n\n' "$_t"
+  case "$_t" in
+    command)
+      printf 'Create a slash-command named "%s".\nPurpose: %s\n\nRequirements:\n' "$_n" "$_intent"
+      printf -- '- Start with YAML frontmatter: a one-line `description:` and an `argument-hint:`.\n'
+      printf -- '- Then write the body as a direct, specific prompt addressed to Claude that accomplishes the purpose.\n'
+      printf -- '- Use $ARGUMENTS (and $1, $2 … if several inputs make sense) where the user input belongs.\n'
+      printf -- '- Prefer concrete, evidence-oriented steps over vague instructions.\n' ;;
+    skill)
+      printf 'Create a SKILL.md for a skill named "%s".\nPurpose: %s\n\nRequirements:\n' "$_n" "$_intent"
+      printf -- '- YAML frontmatter with `name: %s` and a one-line `description:` that makes clear WHEN Claude should auto-trigger it.\n' "$_n"
+      printf -- '- Then a top-level `# Title` heading followed by the skill instructions.\n' ;;
+  esac
+  if [ -n "$_d" ]; then printf -- '- The description should be: %s\n' "$_d"; fi
+  if [ -n "$_a" ]; then printf -- '- The argument-hint should be: %s\n' "$_a"; fi
+  printf '\nOutput ONLY the file content.\n'
+}
+
+# revise_prompt <type> <name> <intent> <prior> <feedback> -> revision prompt (pure).
+revise_prompt() {
+  _t="$1"; _n="$2"; _intent="$3"; _prior="$4"; _fb="$5"
+  printf 'You previously drafted this Claude Code %s file (named "%s", purpose: %s):\n\n' "$_t" "$_n" "$_intent"
+  printf '%s\n\n' "$_prior"
+  printf 'Revise it per this feedback: %s\n\n' "$_fb"
+  printf 'Output ONLY the revised raw file content — no commentary, no surrounding code fences.\n'
+}
+
+# strip_outer_fence: drop a ```fence wrapping the WHOLE file; keep inner fences.
+strip_outer_fence() {
+  awk '{l[NR]=$0} END{
+    s=1; e=NR
+    if (NR>=2 && l[1] ~ /^```/) { s=2; if (l[NR] ~ /^```[ \t]*$/) e=NR-1 }
+    for(i=s;i<=e;i++) print l[i]
+  }'
+}
+
+# run_claude <prompt> -> model completion with any outer code-fence stripped.
+# Generator is overridable via $CZ_CLAUDE_BIN (tests point it at a stub).
+# Forbid all tools so it's a fast single-shot completion, not an agentic run
+# (plan-mode made it emit a plan + go slow; no-tools keeps it ~10s & raw).
+run_claude() {
+  _bin="${CZ_CLAUDE_BIN:-claude}"
+  have "$_bin" || die "--generate needs the '$_bin' CLI on PATH"
+  _notools="Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Task,TodoWrite,NotebookEdit"
+  if [ -n "${GEN_MODEL:-}" ]; then
+    "$_bin" -p "$1" --output-format text --model "$GEN_MODEL" --disallowedTools "$_notools"
+  else
+    "$_bin" -p "$1" --output-format text --disallowedTools "$_notools"
+  fi | strip_outer_fence
+}
+
+# generate_body <type> <name> <intent> <desc> <args> -> drafted file content.
+generate_body() { run_claude "$(gen_prompt "$@")"; }
+
+# regenerate_body <type> <name> <intent> <prior> <feedback> -> revised content.
+regenerate_body() { run_claude "$(revise_prompt "$@")"; }
+
+# refine_loop: interactive accept/regenerate/tweak menu. Mutates global CONTENT,
+# sets global FINALIZE to save|editor. Returns non-zero if the user cancels.
+refine_loop() {
+  _tmp="$(mktemp)"; _ret=1; FINALIZE=cancel
+  while :; do
+    printf '%s\n' "$CONTENT" > "$_tmp"
+    # shellcheck disable=SC2016
+    _prev='if command -v bat >/dev/null 2>&1; then bat --style=plain --color=always '"$_tmp"'; else cat '"$_tmp"'; fi'
+    _choice="$(printf 'save\nedit by hand\nregenerate\ntweak with a note\ncancel\n' |
+      fzf --prompt='draft ▸ ' --height=90% --reverse --no-multi \
+          --preview="$_prev" --preview-window='right,62%')"
+    case "$_choice" in
+      save)        FINALIZE=save;   _ret=0; break ;;
+      'edit by hand') FINALIZE=editor; _ret=0; break ;;
+      regenerate)
+        printf '✦ regenerating…\n' >&2
+        CONTENT="$(generate_body "$TYPE" "$NAME" "$INTENT" "$DESC" "$ARGS")" ;;
+      'tweak with a note')
+        _fb="$(prompt_line 'what to change')"
+        [ -n "$_fb" ] || continue
+        printf '✦ revising…\n' >&2
+        CONTENT="$(regenerate_body "$TYPE" "$NAME" "$INTENT" "$CONTENT" "$_fb")" ;;
+      *) _ret=1; break ;;
+    esac
+  done
+  rm -f "$_tmp"
+  return "$_ret"
+}
+
+# prompt_line <label> -> a single line of free-text input.
+prompt_line() {
+  if have fzf; then
+    printf '' | fzf --print-query --prompt="$1 ▸ " --height=15% --reverse | head -1
+  else
+    printf '%s: ' "$1" >&2; IFS= read -r _l; printf '%s' "$_l"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+# _check_dep <bin> <what> <required|optional>
+_check_dep() {
+  if have "$1"; then printf '  ✓ %-7s %s\n' "$1" "$2"
+  elif [ "$3" = required ]; then printf '  ✗ %-7s %s — REQUIRED\n' "$1" "$2"
+  else printf '  · %-7s %s — optional\n' "$1" "$2"; fi
+}
+
+# run_doctor: report deps, editor, model, and the scopes resolved from $PWD.
+run_doctor() {
+  printf 'cz %s — doctor\n\ndependencies:\n' "$CZ_VERSION"
+  _check_dep fzf    "interactive pickers" required
+  _check_dep bat    "preview in pickers"  optional
+  _check_dep claude "ghostwriter (-g)"    optional
+  _ed="${VISUAL:-${EDITOR:-}}"
+  if [ -n "$_ed" ] && have "$_ed"; then printf '  ✓ editor   %s\n' "$_ed"
+  else printf '  · editor   none set (falls back to vi)\n'; fi
+  printf '\ngeneration model: %s\n\nscopes resolved from %s:\n' "${GEN_MODEL:-<claude default>}" "$PWD"
+  build_scope_menu "$PWD" | while IFS="$(printf '\t')" read -r _s _base _state; do
+    printf '  %-9s %s/.claude (%s)\n' "$_s" "$_base" "$_state"
+  done
+}
+
+usage() {
+  cat <<'EOF'
+cz — capture Claude Code artifacts on the fly
+
+USAGE
+  cz   [type] [name] [options]     # asks for type
+  cmdz [name] [options]            # slash command
+  sklz [name] [options]            # skill
+  plgz [name] [options]            # plugin
+
+OPTIONS
+  -t, --type <command|skill|plugin>
+  -s, --scope <user|project|workspace|here>
+  -d, --dir <path>          target <path>/.claude
+  -g, --generate            ghostwrite the body with Claude (claude -p)
+  -i, --intent <text>       what it should do (the generation brief)
+      --revise <note>       draft, then revise once with this note (with -g)
+      --gen-model <model>   model for --generate (default claude-sonnet-4-6)
+  -m, --message <text>      body (skips editor)
+  -M, --message-file <path> body read from a file (skips editor)
+  -D, --description <text>  frontmatter description
+  -a, --args <hint>         argument-hint (commands)
+      --tools <csv>         allowed-tools
+      --model <model>       model frontmatter
+  -e, --edit                open editor even with -m
+  -y, --yes                 non-interactive (defaults, no prompts)
+  -f, --force               overwrite if exists
+  -n, --dry-run             print path + content, write nothing
+  -o, --open                reopen in $EDITOR after writing
+  -l, --list                list artifacts of this type
+      --doctor              check deps, editor, model, and resolved scopes
+  -h, --help / -v, --version
+EOF
+}
+
+default_type_from_name() {
+  case "$(basename "$1")" in
+    cmdz) printf command ;;
+    sklz) printf skill ;;
+    plgz) printf plugin ;;
+    *) printf '' ;;
+  esac
+}
+
+main() {
+  TYPE="$(default_type_from_name "$0")"
+  NAME=""; SCOPE=""; DIR=""; MESSAGE=""; DESC=""; ARGS=""; TOOLS=""; MODEL=""
+  EDIT=0; YES=0; FORCE=0; DRY_RUN=0; OPEN=0; LIST=0; DOCTOR=0
+  GENERATE=0; INTENT=""; GEN_MODEL="${CZ_GEN_MODEL:-claude-sonnet-4-6}"
+  REVISE=""; FINALIZE=editor
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      command|skill|plugin)
+        if [ -z "$TYPE" ]; then TYPE="$1"; else NAME="$1"; fi ;;
+      -t|--type) TYPE="$2"; shift ;;
+      -s|--scope) SCOPE="$2"; shift ;;
+      -d|--dir) DIR="$2"; shift ;;
+      -g|--generate) GENERATE=1 ;;
+      -i|--intent) INTENT="$2"; shift ;;
+      --revise) REVISE="$2"; shift ;;
+      --gen-model) GEN_MODEL="$2"; shift ;;
+      -m|--message) MESSAGE="$2"; shift ;;
+      -M|--message-file)
+        [ -f "$2" ] || die "message-file not found: $2"
+        MESSAGE="$(cat "$2")"; shift ;;
+      -D|--description) DESC="$2"; shift ;;
+      -a|--args) ARGS="$2"; shift ;;
+      --tools) TOOLS="$2"; shift ;;
+      --model) MODEL="$2"; shift ;;
+      -e|--edit) EDIT=1 ;;
+      -y|--yes) YES=1 ;;
+      -f|--force) FORCE=1 ;;
+      -n|--dry-run) DRY_RUN=1 ;;
+      -o|--open) OPEN=1 ;;
+      -l|--list) LIST=1 ;;
+      --doctor) DOCTOR=1 ;;
+      -h|--help) usage; exit 0 ;;
+      -v|--version) printf 'cz %s\n' "$CZ_VERSION"; exit 0 ;;
+      -*) die "unknown option: $1" 2 ;;
+      *) if [ -z "$NAME" ]; then NAME="$1"; else die "unexpected argument: $1" 2; fi ;;
+    esac
+    shift
+  done
+
+  if [ "$DOCTOR" = 1 ]; then run_doctor; exit 0; fi
+
+  if [ "$LIST" = 1 ]; then
+    [ -n "$TYPE" ] || die "list needs a type (use cmdz/sklz/plgz or --type)"
+    list_artifacts "$TYPE" "$PWD"; exit 0
+  fi
+
+  # type
+  if [ -z "$TYPE" ]; then
+    [ "$YES" = 1 ] && die "type required in --yes mode (use --type)"
+    have fzf || die "fzf required for interactive type pick (or pass --type)"
+    TYPE="$(pick_type)"; [ -n "$TYPE" ] || die "no type selected"
+  fi
+
+  # name (+ possible edit-existing)
+  RESULT_PATH=""
+  if [ -z "$NAME" ]; then
+    [ "$YES" = 1 ] && die "name required in --yes mode"
+    have fzf || die "fzf required for interactive name pick (or pass a name)"
+    pick_name "$TYPE" "$PWD"
+    NAME="$RESULT_NAME"
+  else
+    NAME="$(slugify "$NAME")"
+  fi
+  [ -n "$NAME" ] || die "empty name"
+
+  # edit an existing artifact in place
+  if [ -n "$RESULT_PATH" ]; then
+    info "editing existing $TYPE: $RESULT_PATH"
+    open_editor "$RESULT_PATH"
+    ok "saved $RESULT_PATH"
+    exit 0
+  fi
+
+  # base dir
+  if [ -n "$DIR" ]; then
+    BASE="$DIR"
+  elif [ -n "$SCOPE" ]; then
+    BASE="$(resolve_scope "$SCOPE" "$PWD")"
+  elif [ "$YES" = 1 ]; then
+    BASE="$(resolve_scope project "$PWD")"
+  else
+    have fzf || die "fzf required for interactive scope pick (or pass --scope/--dir)"
+    SCOPE="$(pick_scope "$PWD")"; [ -n "$SCOPE" ] || die "no scope selected"
+    BASE="$(resolve_scope "$SCOPE" "$PWD")"
+  fi
+
+  PATH_OUT="$(target_path "$TYPE" "$BASE" "$NAME")"
+
+  # --generate is for prose artifacts; plugins are structural.
+  if [ "$GENERATE" = 1 ] && [ "$TYPE" = plugin ]; then
+    err "note: --generate isn't supported for plugins; using template"
+    GENERATE=0
+  fi
+
+  # content: render from fields, or ghostwrite with Claude.
+  if [ "$GENERATE" = 1 ]; then
+    [ -n "$INTENT" ] || INTENT="$MESSAGE"
+    [ -n "$INTENT" ] || INTENT="$DESC"
+    if [ -z "$INTENT" ] && [ "$YES" != 1 ]; then INTENT="$(prompt_line 'what should it do?')"; fi
+    [ -n "$INTENT" ] || INTENT="$(printf '%s' "$NAME" | tr '/-' '  ')"
+    printf '✦ drafting %s "%s" with Claude…\n' "$TYPE" "$NAME" >&2
+    CONTENT="$(generate_body "$TYPE" "$NAME" "$INTENT" "$DESC" "$ARGS")"
+    [ -n "$CONTENT" ] || die "generation returned empty"
+    # one-shot non-interactive revision
+    if [ -n "$REVISE" ]; then
+      printf '✦ revising per note…\n' >&2
+      CONTENT="$(regenerate_body "$TYPE" "$NAME" "$INTENT" "$CONTENT" "$REVISE")"
+      [ -n "$CONTENT" ] || die "revision returned empty"
+    fi
+    # interactive refine loop (accept / regenerate / tweak), with live preview
+    if [ "$YES" != 1 ] && [ "$DRY_RUN" != 1 ] && have fzf; then
+      refine_loop || { info "cancelled"; exit 0; }
+    fi
+  else
+    CONTENT="$(render "$TYPE" "$NAME" "$DESC" "$ARGS" "$TOOLS" "$MODEL" "$MESSAGE")"
+  fi
+
+  # finalize in editor (interactive) unless the draft was accepted as-is (save).
+  if [ "$YES" != 1 ] && [ "$DRY_RUN" != 1 ] && [ "$FINALIZE" = editor ]; then
+    if [ "$GENERATE" = 1 ] || [ "$EDIT" = 1 ] || [ -z "$MESSAGE" ]; then
+      have "${VISUAL:-${EDITOR:-vi}}" || die "no editor found (set \$EDITOR)"
+      _tmpdir="$(mktemp -d)"; _ext=md; [ "$TYPE" = plugin ] && _ext=json
+      _draft="$_tmpdir/draft.$_ext"
+      printf '%s\n' "$CONTENT" > "$_draft"
+      open_editor "$_draft"
+      CONTENT="$(cat "$_draft")"
+      rm -rf "$_tmpdir"
+    fi
+  fi
+
+  write_artifact "$PATH_OUT" "$CONTENT"
+  if [ "$TYPE" = plugin ]; then scaffold_plugin "$BASE" "$NAME"; fi
+
+  if [ "$DRY_RUN" != 1 ]; then
+    ok "wrote $PATH_OUT"
+    info "invoke with: $(invoke_hint "$TYPE" "$NAME")"
+    if [ "$OPEN" = 1 ]; then open_editor "$PATH_OUT"; fi
+  fi
+  return 0
+}
+
+# Sourcing guard: `CZ_SOURCED=1 . cz` loads functions without running main.
+if [ "${CZ_SOURCED:-0}" != "1" ]; then
+  main "$@"
+fi
