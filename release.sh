@@ -9,8 +9,15 @@ REPO="${KITZ_REPO:-H0BB5/kitz}"
 URL="https://github.com/$REPO/archive/refs/tags/$TAG.tar.gz"
 
 echo "fetching $URL …"
-SHA="$(curl -fsSL "$URL" | shasum -a 256 | awk '{print $1}')" \
-  || { echo "could not fetch $URL — is the tag pushed?" >&2; exit 1; }
+# Download to a file first: piping curl into shasum hides curl's exit status,
+# so a 404 would otherwise yield the SHA256 of empty input (e3b0c442…b855).
+TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
+if ! curl -fsSL "$URL" -o "$TMP"; then
+  echo "could not fetch $URL — is the tag pushed AND the repo public?" >&2
+  echo "(GitHub archive tarballs 404 for private repos; make it public first.)" >&2
+  exit 1
+fi
+SHA="$(shasum -a 256 "$TMP" | awk '{print $1}')"
 
 cat <<EOF
 
