@@ -7,7 +7,7 @@
 # @raycast.schemaVersion 1
 # @raycast.title New Claude Artifact
 # @raycast.mode compact
-# @raycast.packageName cz
+# @raycast.packageName kitz
 # @raycast.icon 🔱
 # @raycast.argument1 { "type": "text", "placeholder": "name" }
 # @raycast.argument2 { "type": "dropdown", "placeholder": "type", "data": [ { "title": "command", "value": "command" }, { "title": "skill", "value": "skill" }, { "title": "plugin", "value": "plugin" } ] }
@@ -20,12 +20,12 @@ set -euo pipefail
 
 NAME="$1"; TYPE="$2"; SCOPE="$3"; DESC="${4:-}"
 # Raycast has no $PWD context, so default project/workspace to your code root.
-ROOT="${CZ_RAYCAST_ROOT:-$HOME/Documents}"
+ROOT="${KITZ_RAYCAST_ROOT:-$HOME/Documents}"
 
-# Resolve cz on PATH or fall back to the repo.
-CZ="$(command -v cz || echo "$HOME/Projects/cz/bin/cz")"
+# Resolve kitz on PATH or fall back to the repo.
+KITZ="$(command -v kitz || echo "$HOME/Projects/kitz/bin/kitz")"
 
-PATH_OUT="$("$CZ" --type "$TYPE" "$NAME" --scope "$SCOPE" --dir "$ROOT" \
+PATH_OUT="$("$KITZ" --type "$TYPE" "$NAME" --scope "$SCOPE" --dir "$ROOT" \
   --description "$DESC" -y -f 2>&1 | sed -n 's/^✓ wrote //p')"
 
 if [ -n "$PATH_OUT" ]; then
@@ -33,5 +33,5 @@ if [ -n "$PATH_OUT" ]; then
   # Open in your GUI editor for refinement (adjust to taste).
   [ -n "${EDITOR:-}" ] && command -v "$EDITOR" >/dev/null 2>&1 && open -a "$EDITOR" "$PATH_OUT" 2>/dev/null || true
 else
-  echo "cz: failed to create artifact"; exit 1
+  echo "kitz: failed to create artifact"; exit 1
 fi

@@ -5,7 +5,7 @@
 # @raycast.schemaVersion 1
 # @raycast.title Draft Claude Artifact (AI)
 # @raycast.mode fullOutput
-# @raycast.packageName cz
+# @raycast.packageName kitz
 # @raycast.icon ✦
 # @raycast.argument1 { "type": "text", "placeholder": "name" }
 # @raycast.argument2 { "type": "dropdown", "placeholder": "type", "data": [ { "title": "command", "value": "command" }, { "title": "skill", "value": "skill" } ] }
@@ -17,11 +17,11 @@
 set -euo pipefail
 
 NAME="$1"; TYPE="$2"; INTENT="$3"; SCOPE="$4"
-ROOT="${CZ_RAYCAST_ROOT:-$HOME/Documents}"
-CZ="$(command -v cz || echo "$HOME/Projects/cz/bin/cz")"
+ROOT="${KITZ_RAYCAST_ROOT:-$HOME/Documents}"
+KITZ="$(command -v kitz || echo "$HOME/Projects/kitz/bin/kitz")"
 
 echo "✦ drafting with Claude…"
-OUT="$("$CZ" --type "$TYPE" "$NAME" -g -i "$INTENT" --scope "$SCOPE" --dir "$ROOT" -y -f 2>&1)"
+OUT="$("$KITZ" --type "$TYPE" "$NAME" -g -i "$INTENT" --scope "$SCOPE" --dir "$ROOT" -y -f 2>&1)"
 PATH_OUT="$(printf '%s\n' "$OUT" | sed -n 's/^✓ wrote //p')"
 
 if [ -n "$PATH_OUT" ]; then

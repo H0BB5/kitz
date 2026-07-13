@@ -1,4 +1,4 @@
-# cz — capture Claude artifacts on the fly
+# kitz — capture Claude artifacts on the fly
 
 > One portable engine, three muscle-memory names. Capture a slash command,
 > skill, or plugin the instant the idea lands — and drop it in the right
@@ -11,7 +11,7 @@ stopping to (a) remember the file format, (b) figure out the right directory,
 (c) author frontmatter, kills the impulse. By the time you've context-switched,
 the idea is gone or done badly.
 
-`cz` collapses that to a single muscle-memory keystroke from anywhere you live:
+`kitz` collapses that to a single muscle-memory keystroke from anywhere you live:
 Raycast, tmux, nvim, or a Claude Code `!` shell-out.
 
 ## 1. Design principles
@@ -30,12 +30,12 @@ Raycast, tmux, nvim, or a Claude Code `!` shell-out.
 
 ## 2. The four entry points (multi-call binary)
 
-A single script `bin/cz`. `install.sh` symlinks four names to it; the script
+A single script `bin/kitz`. `install.sh` symlinks four names to it; the script
 reads `basename "$0"` to pick a default artifact type:
 
 | Invoked as | Default type | Output |
 |------------|--------------|--------|
-| `cz`   | *ask* (fzf type picker) | — |
+| `kitz`   | *ask* (fzf type picker) | — |
 | `cmdz` | command | `<scope>/.claude/commands/<name>.md` |
 | `sklz` | skill   | `<scope>/.claude/skills/<name>/SKILL.md` |
 | `plgz` | plugin  | `<scope>/.claude/plugins/<name>/` (+ manifest) |
@@ -97,7 +97,7 @@ picker with their resolved absolute path so the choice is unambiguous:
 |------|-----------|--------------|
 | One-shot | `cmdz deploy -m "Deploy $1 to staging" -D "deploy helper" -y` | 0 prompts |
 | Quick | `cmdz deploy` → editor opens prefilled → save → scope pick | ~2 |
-| Full | `cz` → type → name → scope → editor | ~4 |
+| Full | `kitz` → type → name → scope → editor | ~4 |
 | Edit existing | `sklz` → fuzzy-pick existing skill → editor | reopens in place |
 
 The name picker (fzf `--print-query` over existing artifacts) unifies
@@ -107,7 +107,7 @@ Enter to edit it where it lives (scope step skipped).
 ## 6. CLI surface
 
 ```
-cz [type] [name] [options]
+kitz [type] [name] [options]
 
   type   command | skill | plugin   (positional; overrides $0 default)
   name   artifact name (slugified to kebab-case; '/' allowed for commands)
@@ -146,7 +146,7 @@ Split pure logic from IO so the core is unit-testable with no TTY:
 - `open_editor <file>` ($EDITOR)
 - `write_artifact` (mkdir + write; honours `--dry-run`/`--force`)
 
-Sourcing guard: `CZ_SOURCED=1 . bin/cz` defines functions without running
+Sourcing guard: `KITZ_SOURCED=1 . bin/kitz` defines functions without running
 `main`, so tests call individual functions directly.
 
 ## 8. Testing strategy
@@ -155,21 +155,21 @@ Sourcing guard: `CZ_SOURCED=1 . bin/cz` defines functions without running
 - Runs in a sandbox `$HOME` (temp dir) so it never touches the real `~/.claude`.
 - Unit: slugify edge cases, scope resolution from nested dirs, target paths,
   rendered frontmatter for all 3 types, plugin manifest JSON validity (`jq`).
-- Integration (non-interactive): `cz <type> <name> -m ... -y --dir <sandbox>`
+- Integration (non-interactive): `kitz <type> <name> -m ... -y --dir <sandbox>`
   and `--dry-run`; assert file exists at expected path with expected content;
   assert overwrite protection (no `-f` → refuse) and idempotency.
 - Exit non-zero on first failure; print a PASS/FAIL summary.
 
 ## 9. Portability / distribution
 
-- `install.sh`: symlink `cz`/`cmdz`/`sklz`/`plgz` into `~/.local/bin`
+- `install.sh`: symlink `kitz`/`cmdz`/`sklz`/`plgz` into `~/.local/bin`
   (fallback `/opt/homebrew/bin`); verify `fzf` (required), warn if
   `bat`/`$EDITOR` missing; print PATH guidance.
-- Homebrew (later): `Formula/cz.rb` installs the script + the 4 symlinks.
+- Homebrew (later): `Formula/kitz.rb` installs the script + the 4 symlinks.
 - `integrations/`:
-  - `raycast/` — Raycast Script Command with arguments → calls `cz ... -y`.
-  - `tmux.conf.snippet` — `bind C-k display-popup -E cz` (godmux-style popup).
-  - `nvim/cz.lua` — `:Cz` user command; visual selection becomes `--message`.
+  - `raycast/` — Raycast Script Command with arguments → calls `kitz ... -y`.
+  - `tmux.conf.snippet` — `bind C-k display-popup -E kitz` (godmux-style popup).
+  - `nvim/kitz.lua` — `:Kitz` user command; visual selection becomes `--message`.
 
 ## 10. Non-goals (POC)
 

@@ -1,17 +1,16 @@
-# cz — tmux integration (godmux-style floating popup). Requires tmux >= 3.2.
+# kitz — tmux integration (godmux-style floating popup). Requires tmux >= 3.2.
 # Append to ~/.tmux.conf, then: tmux source-file ~/.tmux.conf
 #
-# prefix + C : full interactive capture (asks type → name → scope → editor)
-bind-key C display-popup -E -w 80% -h 80% -T " cz · new artifact " "cz"
+# prefix + C : capture a command (name → scope → editor)
+bind-key C display-popup -E -w 80% -h 80% -T " cmdz · command " "cmdz"
 
-# Type-specific fast paths (skip the type pick):
-bind-key M-c display-popup -E -w 80% -h 80% -T " cmdz · command " "cmdz"
-bind-key M-s display-popup -E -w 80% -h 80% -T " sklz · skill "   "sklz"
-bind-key M-p display-popup -E -w 80% -h 80% -T " plgz · plugin "  "plgz"
+# Type-specific:
+bind-key M-s display-popup -E -w 80% -h 80% -T " sklz · skill "  "sklz"
+bind-key M-p display-popup -E -w 80% -h 80% -T " plgz · plugin " "plgz"
 
 # Ghostwriter: prefix + G → pick name/scope, type what it should do, Claude
 # drafts the whole artifact, then it opens in your editor to review before save.
-bind-key G display-popup -E -w 80% -h 80% -T " cz · draft with Claude ✦ " "cmdz -g"
+bind-key G display-popup -E -w 80% -h 80% -T " kitz · draft with Claude ✦ " "cmdz -g"
 
 # The popup inherits the pane's $PWD, so 'project'/'workspace' scopes resolve
 # relative to whatever repo you're in. fzf + editor run inside the popup.

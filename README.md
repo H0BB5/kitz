@@ -1,4 +1,4 @@
-# cz 🔱
+# kitz 🔱
 
 Capture Claude Code **commands**, **skills**, and **plugins** the instant the
 idea lands — and drop them in the right `.claude/` scope without breaking flow.
@@ -10,29 +10,31 @@ One portable `sh` engine, three muscle-memory names:
 | `cmdz` | slash command | `<scope>/.claude/commands/<name>.md` |
 | `sklz` | skill | `<scope>/.claude/skills/<name>/SKILL.md` |
 | `plgz` | plugin | `<scope>/.claude/plugins/<name>/` |
-| `cz`   | *asks which* | — |
+| `kitz`   | *asks which* | — |
 
 ## Install
 
 ```sh
-git clone <this> ~/Projects/cz   # or wherever
-sh ~/Projects/cz/install.sh       # symlinks cz/cmdz/sklz/plgz into PATH
+git clone <this> ~/Projects/kitz   # or wherever
+sh ~/Projects/kitz/install.sh       # symlinks kitz/cmdz/sklz/plgz into PATH
 ```
 Requires `fzf` (interactive pickers). `bat` (preview) and `$EDITOR` are optional
 but nice. Uninstall: `sh install.sh --uninstall`. Check your setup any time:
 
 ```sh
-cz --doctor      # deps, editor, generation model, and the scopes you'd write to
+kitz --doctor      # deps, editor, generation model, and the scopes you'd write to
 ```
 
 ### Homebrew
 
 ```sh
-brew install H0BB5/cz/cz
+brew install h0bb5/tap/kitz      # installs kitz + cmdz/sklz/plgz
 ```
-Publishing flow (one-time): push this repo + tag a release, run `./release.sh v0.2.0`
-to get the `url`/`sha256`, paste into `homebrew/cz.rb`, and push it to your
-`homebrew-cz` tap. See the header of `homebrew/cz.rb`.
+Uses one shared tap (`h0bb5/homebrew-tap`) for all your tools — no double-slug,
+and future tools install as `h0bb5/tap/<name>`. Publishing flow (one-time):
+push this repo + tag a release, run `./release.sh v0.2.0` to get the
+`url`/`sha256`, paste into `homebrew/kitz.rb`, and push that file to
+`h0bb5/homebrew-tap` at `Formula/kitz.rb`. See the header of `homebrew/kitz.rb`.
 
 ## Use — three speeds
 
@@ -44,7 +46,7 @@ cmdz deploy -m 'Deploy $1 to $2. Confirm before prod.' -D 'deploy helper' -s pro
 cmdz deploy
 
 # 3. Full — pick type, name, scope, then edit
-cz
+kitz
 ```
 
 The name picker doubles as an editor: type a new name + Enter to create, or
@@ -63,7 +65,7 @@ cmdz scope-creep -g                 # interactive: prompts 'what should it do?'
 ```
 - `-i/--intent` is the brief (falls back to `-m`, then `--description`, then the name).
 - Tools are disabled for the generation, so it's a fast single-shot completion — not an agentic run.
-- Model: `--gen-model` (default `claude-sonnet-4-6`; `CZ_GEN_MODEL` to set globally).
+- Model: `--gen-model` (default `claude-sonnet-4-6`; `KITZ_GEN_MODEL` to set globally).
 - Pairs with `-y` (write straight to disk) or `-n` (preview the draft).
 
 ## Scopes
@@ -74,7 +76,7 @@ cmdz scope-creep -g                 # interactive: prompts 'what should it do?'
 ## Anywhere you live
 
 - **tmux** — `prefix + C` capture popup, `prefix + G` ghostwrite popup (`integrations/tmux.conf.snippet`)
-- **nvim** — `:Cz` / `:CzGen`, or visual-select a brief → `:CzGen` to have Claude draft it (`integrations/nvim/cz.lua`)
+- **nvim** — `:Kitz` / `:KitzGen`, or visual-select a brief → `:KitzGen` to have Claude draft it (`integrations/nvim/kitz.lua`)
 - **Raycast** — capture + "Draft Claude Artifact (AI)" script commands (`integrations/raycast/`)
 - **Claude Code** — `!cmdz my-idea -g -i '...' -y`
 

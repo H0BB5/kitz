@@ -1,17 +1,17 @@
 #!/usr/bin/env sh
-# cz — capture Claude Code artifacts (commands / skills / plugins) on the fly.
+# kitz — capture Claude Code artifacts (commands / skills / plugins) on the fly.
 #
 # Multi-call: symlink as cmdz|sklz|plgz to preset the artifact type.
 # Pure logic is split from IO so the core is testable without a TTY
-# (source with CZ_SOURCED=1 to load functions without running main).
+# (source with KITZ_SOURCED=1 to load functions without running main).
 set -eu
 
-CZ_VERSION="0.2.0"
+KITZ_VERSION="0.1.0"
 
 # ---------------------------------------------------------------------------
 # tiny output helpers
 # ---------------------------------------------------------------------------
-err()  { printf 'cz: %s\n' "$1" >&2; }
+err()  { printf 'kitz: %s\n' "$1" >&2; }
 die()  { err "$1"; exit "${2:-1}"; }
 ok()   { printf '\033[32m✓\033[0m %s\n' "$1"; }
 info() { printf '\033[2m%s\033[0m\n' "$1"; }
@@ -131,9 +131,63 @@ render() {
 # ---------------------------------------------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
 
-pick_type() {
-  printf 'command\nskill\nplugin\n' |
-    fzf --prompt='type ▸ ' --height=30% --reverse --no-multi
+# clipboard_cmd -> the platform "copy stdin to clipboard" command (empty if none).
+clipboard_cmd() {
+  if   have pbcopy;   then printf 'pbcopy'
+  elif have wl-copy;  then printf 'wl-copy'
+  elif have xclip;    then printf 'xclip -selection clipboard'
+  elif have xsel;     then printf 'xsel --clipboard --input'
+  elif have clip.exe; then printf 'clip.exe'
+  fi
+}
+
+# remove_target <type> <listed-path> -> the path to delete (pure).
+# The picker lists a file, but skills/plugins live in a directory we remove whole.
+remove_target() {
+  case "$1" in
+    skill)  dirname "$2" ;;                              # …/skills/<name>/SKILL.md -> …/<name>
+    plugin) _d="$2"; printf '%s' "${_d%/.claude-plugin/plugin.json}" ;;
+    *)      printf '%s' "$2" ;;                          # command: the file itself
+  esac
+}
+
+# do_remove <type> <listed-path>: delete the artifact, no prompt (testable).
+do_remove() {
+  _tgt="$(remove_target "$1" "$2")"
+  [ -n "$_tgt" ] && [ -e "$_tgt" ] || return 0
+  rm -rf -- "$_tgt"
+}
+
+# internal_copy <path>: copy a file's contents to the clipboard (picker ctrl-y).
+internal_copy() {
+  _clip="${KITZ_CLIP:-$(clipboard_cmd)}"
+  [ -n "$_clip" ] && [ -f "$1" ] || return 0
+  # word-split $_clip on purpose (e.g. "xclip -selection clipboard").
+  # shellcheck disable=SC2086
+  $_clip < "$1"
+}
+
+# internal_reveal <path>: show the file in the OS file manager (picker ctrl-o).
+# macOS reveals+selects it in Finder; elsewhere we open its containing folder.
+internal_reveal() {
+  [ -e "$1" ] || return 0
+  if [ -n "${KITZ_REVEAL:-}" ]; then
+    # override for tests / custom file managers; receives the file path.
+    # shellcheck disable=SC2086
+    $KITZ_REVEAL "$1"
+  elif have open;         then open -R "$1"                              # macOS Finder
+  elif have xdg-open;     then xdg-open "$(dirname "$1")" >/dev/null 2>&1 # Linux
+  elif have explorer.exe; then explorer.exe "$(dirname "$1")" >/dev/null 2>&1 || true
+  fi
+}
+
+# internal_delete <type> <path>: confirm on the tty, then do_remove (picker ctrl-x).
+internal_delete() {
+  _tgt="$(remove_target "$1" "$2")"
+  [ -n "$_tgt" ] && [ -e "$_tgt" ] || return 0
+  printf 'delete %s ? [y/N] ' "$_tgt" > /dev/tty 2>/dev/null || return 0
+  IFS= read -r _ans < /dev/tty 2>/dev/null || return 0
+  case "$_ans" in y|Y|yes|YES) do_remove "$1" "$2" ;; esac
 }
 
 # build_scope_menu <start> -> "scope<TAB>base<TAB>state" lines.
@@ -152,27 +206,50 @@ pick_scope() {
     cut -f1
 }
 
+# scan_type <type> <base> -> "name<TAB>path" for existing artifacts under one base.
+scan_type() {
+  case "$1" in
+    command) _glob="$2/.claude/commands" ; _suffix=".md" ;;
+    skill)   _glob="$2/.claude/skills"   ; _suffix="/SKILL.md" ;;
+    plugin)  _glob="$2/.claude/plugins"  ; _suffix="/.claude-plugin/plugin.json" ;;
+    *) return 0 ;;
+  esac
+  [ -d "$_glob" ] || return 0
+  if [ "$1" = command ]; then
+    find "$_glob" -type f -name '*.md' 2>/dev/null | while IFS= read -r f; do
+      _n="${f#"$_glob"/}"; _n="${_n%.md}"; printf '%s\t%s\n' "$_n" "$f"
+    done
+  else
+    find "$_glob" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r d; do
+      printf '%s\t%s%s\n' "$(basename "$d")" "$d" "$_suffix"
+    done
+  fi
+}
+
 # list_artifacts <type> <start> -> "name<TAB>path" for existing artifacts.
 list_artifacts() {
-  _type="$1"
   for _s in project workspace user here; do
-    _base="$(resolve_scope "$_s" "${2:-$PWD}")"
-    case "$_type" in
-      command) _glob="$_base/.claude/commands" ; _suffix=".md" ;;
-      skill)   _glob="$_base/.claude/skills"   ; _suffix="/SKILL.md" ;;
-      plugin)  _glob="$_base/.claude/plugins"  ; _suffix="/.claude-plugin/plugin.json" ;;
-    esac
-    [ -d "$_glob" ] || continue
-    if [ "$_type" = command ]; then
-      find "$_glob" -type f -name '*.md' 2>/dev/null | while IFS= read -r f; do
-        _n="${f#"$_glob"/}"; _n="${_n%.md}"; printf '%s\t%s\n' "$_n" "$f"
-      done
-    else
-      find "$_glob" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r d; do
-        printf '%s\t%s%s\n' "$(basename "$d")" "$d" "$_suffix"
-      done
-    fi
+    scan_type "$1" "$(resolve_scope "$_s" "${2:-$PWD}")"
   done | sort -u
+}
+
+# dedup_by_path: keep the first row per unique path (field 4). First-seen wins,
+# so the earliest scope in list_all's priority order labels a shared location.
+dedup_by_path() { awk -F'\t' '!seen[$4]++'; }
+
+# list_all <start> -> "type<TAB>scope<TAB>name<TAB>path" across every type/scope.
+# Powers the bare-`kitz` home dashboard. Names sort last so their varied length
+# never misaligns the columns before them.
+list_all() {
+  _start="${1:-$PWD}"
+  for _t in command skill plugin; do
+    for _s in user project workspace here; do
+      scan_type "$_t" "$(resolve_scope "$_s" "$_start")" |
+        while IFS="$(printf '\t')" read -r _n _p; do
+          printf '%s\t%s\t%s\t%s\n' "$_t" "$_s" "$_n" "$_p"
+        done
+    done
+  done | dedup_by_path | sort
 }
 
 # pick_name <type> <start>: sets globals RESULT_NAME and RESULT_PATH.
@@ -182,9 +259,17 @@ pick_name() {
   # $f is set and expanded inside the fzf-spawned preview shell, not here.
   # shellcheck disable=SC2016
   _preview='f={2}; if command -v bat >/dev/null 2>&1; then bat --style=plain --color=always "$f" 2>/dev/null; else cat "$f" 2>/dev/null; fi'
+  # ctrl-y copies the highlighted artifact; ctrl-x deletes it and reloads the list.
+  # (Bare c/x can't be used — typing filters the list in fzf.) $_self re-invokes
+  # this same engine; $1 (the type) drives whole-dir removal for skills/plugins.
+  _self="${KITZ_SELF:-kitz}"
   _out="$(list_artifacts "$1" "$2" |
     fzf --prompt="$1 name ▸ " --height=70% --reverse --no-multi --print-query \
         --delimiter='\t' --with-nth=1 \
+        --header="enter edit · ctrl-y copy · ctrl-o reveal · ctrl-x delete" \
+        --bind="ctrl-y:execute-silent($_self __copy {2})" \
+        --bind="ctrl-o:execute-silent($_self __reveal {2})" \
+        --bind="ctrl-x:execute($_self __delete $1 {2})+reload($_self --list $1)" \
         --preview="$_preview" --preview-window='right,60%' || true)"
   # line1 = typed query; line2 (if any) = selected "name<TAB>path"
   _query="$(printf '%s\n' "$_out" | sed -n '1p')"
@@ -195,6 +280,49 @@ pick_name() {
   else
     RESULT_NAME="$(slugify "$_query")"
   fi
+}
+
+# choose_type -> command|skill|plugin, picked via fzf (empty if cancelled).
+choose_type() {
+  printf 'command\nskill\nplugin\n' |
+    fzf --prompt='new ▸ ' --height=20% --reverse --no-multi --header='what to create'
+}
+
+# home_tui: the bare-`kitz` cross-type dashboard. Browses every artifact with a
+# preview; enter edits, ctrl-y copies, ctrl-x deletes (reload). ctrl-n / ctrl-g
+# accept out to create: they set TYPE (+NAME/GENERATE) and RETURN so main creates.
+# Any other exit (edit an existing, or cancel) is terminal — it exits the process.
+home_tui() {
+  _self="${KITZ_SELF:-kitz}"
+  # shellcheck disable=SC2016
+  _preview='f={4}; if command -v bat >/dev/null 2>&1; then bat --style=plain --color=always "$f" 2>/dev/null; else cat "$f" 2>/dev/null; fi'
+  _out="$(list_all "$PWD" |
+    fzf --prompt='kitz ▸ ' --height=90% --reverse --no-multi --print-query \
+        --expect=ctrl-n,ctrl-g \
+        --delimiter='\t' --with-nth='1,2,3' \
+        --header='enter edit · ctrl-y copy · ctrl-o reveal · ctrl-x delete · ctrl-n new · ctrl-g draft' \
+        --bind="ctrl-y:execute-silent($_self __copy {4})" \
+        --bind="ctrl-o:execute-silent($_self __reveal {4})" \
+        --bind="ctrl-x:execute($_self __delete {1} {4})+reload($_self __lsall)" \
+        --preview="$_preview" --preview-window='right,55%' || true)"
+  # With --print-query + --expect: line1=query, line2=key (empty on Enter), line3=row.
+  _query="$(printf '%s\n' "$_out" | sed -n '1p')"
+  _key="$(printf '%s\n'   "$_out" | sed -n '2p')"
+  _sel="$(printf '%s\n'   "$_out" | sed -n '3p')"
+  case "$_key" in
+    ctrl-n) TYPE="$(choose_type)"; [ -n "$TYPE" ] || exit 0
+            NAME="$_query"; return 0 ;;
+    ctrl-g) TYPE="$(choose_type)"; [ -n "$TYPE" ] || exit 0
+            NAME="$_query"; GENERATE=1; return 0 ;;
+    *)  # plain Enter (edit the highlighted row) or cancel
+        if [ -n "$_sel" ]; then
+          _path="$(printf '%s' "$_sel" | cut -f4)"
+          info "editing $(printf '%s' "$_sel" | cut -f1): $_path"
+          open_editor "$_path"
+          ok "saved $_path"
+        fi
+        exit 0 ;;
+  esac
 }
 
 open_editor() {
@@ -278,11 +406,11 @@ strip_outer_fence() {
 }
 
 # run_claude <prompt> -> model completion with any outer code-fence stripped.
-# Generator is overridable via $CZ_CLAUDE_BIN (tests point it at a stub).
+# Generator is overridable via $KITZ_CLAUDE_BIN (tests point it at a stub).
 # Forbid all tools so it's a fast single-shot completion, not an agentic run
 # (plan-mode made it emit a plan + go slow; no-tools keeps it ~10s & raw).
 run_claude() {
-  _bin="${CZ_CLAUDE_BIN:-claude}"
+  _bin="${KITZ_CLAUDE_BIN:-claude}"
   have "$_bin" || die "--generate needs the '$_bin' CLI on PATH"
   _notools="Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Task,TodoWrite,NotebookEdit"
   if [ -n "${GEN_MODEL:-}" ]; then
@@ -348,7 +476,7 @@ _check_dep() {
 
 # run_doctor: report deps, editor, model, and the scopes resolved from $PWD.
 run_doctor() {
-  printf 'cz %s — doctor\n\ndependencies:\n' "$CZ_VERSION"
+  printf 'kitz %s — doctor\n\ndependencies:\n' "$KITZ_VERSION"
   _check_dep fzf    "interactive pickers" required
   _check_dep bat    "preview in pickers"  optional
   _check_dep claude "ghostwriter (-g)"    optional
@@ -363,13 +491,14 @@ run_doctor() {
 
 usage() {
   cat <<'EOF'
-cz — capture Claude Code artifacts on the fly
+kitz — capture Claude Code artifacts on the fly
 
 USAGE
-  cz   [type] [name] [options]     # asks for type
   cmdz [name] [options]            # slash command
   sklz [name] [options]            # skill
   plgz [name] [options]            # plugin
+  kitz                             # home dashboard: browse/edit/copy/delete/new
+  kitz --doctor | --help | --version    # umbrella (non-interactive: prints help)
 
 OPTIONS
   -t, --type <command|skill|plugin>
@@ -406,10 +535,28 @@ default_type_from_name() {
 }
 
 main() {
+  # Internal re-entry from the fzf picker (see pick_name). Handled before normal
+  # parsing so the multi-call basename never matters here.
+  case "${1:-}" in
+    __copy)   internal_copy "${2:-}"; exit 0 ;;
+    __delete) internal_delete "${2:-}" "${3:-}"; exit 0 ;;
+    __reveal) internal_reveal "${2:-}"; exit 0 ;;
+    __lsall)  list_all "$PWD"; exit 0 ;;
+  esac
+
+  # Absolute path to this engine, so the picker's binds can re-invoke it.
+  KITZ_SELF="$0"
+  case "$KITZ_SELF" in
+    /*) ;;
+    */*) KITZ_SELF="$PWD/$KITZ_SELF" ;;
+    *)   KITZ_SELF="$(command -v "$KITZ_SELF" 2>/dev/null || printf '%s' "$KITZ_SELF")" ;;
+  esac
+  export KITZ_SELF
+
   TYPE="$(default_type_from_name "$0")"
   NAME=""; SCOPE=""; DIR=""; MESSAGE=""; DESC=""; ARGS=""; TOOLS=""; MODEL=""
   EDIT=0; YES=0; FORCE=0; DRY_RUN=0; OPEN=0; LIST=0; DOCTOR=0
-  GENERATE=0; INTENT=""; GEN_MODEL="${CZ_GEN_MODEL:-claude-sonnet-4-6}"
+  GENERATE=0; INTENT=""; GEN_MODEL="${KITZ_GEN_MODEL:-claude-sonnet-4-6}"
   REVISE=""; FINALIZE=editor
 
   while [ $# -gt 0 ]; do
@@ -439,7 +586,7 @@ main() {
       -l|--list) LIST=1 ;;
       --doctor) DOCTOR=1 ;;
       -h|--help) usage; exit 0 ;;
-      -v|--version) printf 'cz %s\n' "$CZ_VERSION"; exit 0 ;;
+      -v|--version) printf 'kitz %s\n' "$KITZ_VERSION"; exit 0 ;;
       -*) die "unknown option: $1" 2 ;;
       *) if [ -z "$NAME" ]; then NAME="$1"; else die "unexpected argument: $1" 2; fi ;;
     esac
@@ -453,11 +600,17 @@ main() {
     list_artifacts "$TYPE" "$PWD"; exit 0
   fi
 
-  # type
+  # type — set by the command name (cmdz/sklz/plgz) or --type. Bare `kitz` on an
+  # interactive terminal opens the cross-type home dashboard; in a script/pipe (or
+  # without fzf) it stays a help/umbrella command, so nothing shelling out breaks.
   if [ -z "$TYPE" ]; then
-    [ "$YES" = 1 ] && die "type required in --yes mode (use --type)"
-    have fzf || die "fzf required for interactive type pick (or pass --type)"
-    TYPE="$(pick_type)"; [ -n "$TYPE" ] || die "no type selected"
+    if [ -z "$NAME" ] && [ -t 0 ] && [ -t 1 ] && have fzf; then
+      home_tui   # edits/copies/deletes and exits, or sets TYPE(+NAME/GENERATE) to create
+    fi
+    if [ -z "$TYPE" ]; then
+      if [ -z "$NAME" ]; then usage; exit 0; fi
+      die "no type — use cmdz/sklz/plgz, or 'kitz <command|skill|plugin> <name>' / --type"
+    fi
   fi
 
   # name (+ possible edit-existing)
@@ -548,7 +701,7 @@ main() {
   return 0
 }
 
-# Sourcing guard: `CZ_SOURCED=1 . cz` loads functions without running main.
-if [ "${CZ_SOURCED:-0}" != "1" ]; then
+# Sourcing guard: `KITZ_SOURCED=1 . kitz` loads functions without running main.
+if [ "${KITZ_SOURCED:-0}" != "1" ]; then
   main "$@"
 fi

@@ -1,12 +1,12 @@
 #!/usr/bin/env sh
-# Pure-shell test harness for cz. No TTY, no external framework.
-# Unit tests source cz (CZ_SOURCED=1) in subshells; integration tests run the
+# Pure-shell test harness for kitz. No TTY, no external framework.
+# Unit tests source kitz (KITZ_SOURCED=1) in subshells; integration tests run the
 # real script non-interactively against a sandbox dir.
 # shellcheck disable=SC2016  # tests deliberately assert on literal $1/$ARGUMENTS
-# shellcheck disable=SC1090  # cz is sourced dynamically via $CZ
-# shellcheck disable=SC2034  # CZ_SOURCED is consumed by cz's sourcing guard
+# shellcheck disable=SC1090  # kitz is sourced dynamically via $KITZ
+# shellcheck disable=SC2034  # KITZ_SOURCED is consumed by kitz's sourcing guard
 HERE="$(cd "$(dirname "$0")" && pwd)"
-CZ="$HERE/../bin/cz"
+KITZ="$HERE/../bin/kitz"
 SB="$(mktemp -d)"
 PASS=0; FAIL=0
 
@@ -15,8 +15,8 @@ trap 'rm -rf "$SB"' EXIT
 pass() { PASS=$((PASS+1)); printf '  \033[32mok\033[0m   %s\n' "$1"; }
 fail() { FAIL=$((FAIL+1)); printf '  \033[31mFAIL\033[0m %s\n    %s\n' "$1" "${2:-}"; }
 
-# run a cz function in an isolated subshell after sourcing the lib
-call() { ( CZ_SOURCED=1; . "$CZ"; "$@" ); }
+# run a kitz function in an isolated subshell after sourcing the lib
+call() { ( KITZ_SOURCED=1; . "$KITZ"; "$@" ); }
 
 assert_eq()  { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "exp=[$2] got=[$3]"; fi; }
 assert_has() { if printf '%s' "$2" | grep -qF -- "$3"; then pass "$1"; else fail "$1" "missing [$3] in: $2"; fi; }
@@ -53,6 +53,29 @@ assert_eq "cmd path"    "/b/.claude/commands/x.md"            "$(call target_pat
 assert_eq "skill path"  "/b/.claude/skills/x/SKILL.md"        "$(call target_path skill /b x)"
 assert_eq "plugin path" "/b/.claude/plugins/x/.claude-plugin/plugin.json" "$(call target_path plugin /b x)"
 
+echo "── unit: remove_target ────────────────────"
+assert_eq "cmd = the file"   "/b/.claude/commands/x.md" "$(call remove_target command /b/.claude/commands/x.md)"
+assert_eq "skill = its dir"  "/b/.claude/skills/x"      "$(call remove_target skill /b/.claude/skills/x/SKILL.md)"
+assert_eq "plugin = its dir" "/b/.claude/plugins/x"     "$(call remove_target plugin /b/.claude/plugins/x/.claude-plugin/plugin.json)"
+
+echo "── unit: scan_type / list_all ─────────────"
+mkdir -p "$SB/all/.claude/commands" "$SB/all/.claude/skills/rev" "$SB/all/.claude/plugins/kit/.claude-plugin"
+: > "$SB/all/.claude/commands/dep.md"
+: > "$SB/all/.claude/skills/rev/SKILL.md"
+: > "$SB/all/.claude/plugins/kit/.claude-plugin/plugin.json"
+TAB="$(printf '\t')"
+assert_has "scan_type finds command" "$(call scan_type command "$SB/all")" "dep"
+assert_has "scan_type skill = SKILL.md path" "$(call scan_type skill "$SB/all")" "rev/SKILL.md"
+# home dashboard rows: type<TAB>scope<TAB>name<TAB>path (scope varies, so match loosely)
+LA="$(HOME="$SB/nope" call list_all "$SB/all")"
+row() { printf '%s\n' "$LA" | grep -q "^$1${TAB}.*${TAB}$2${TAB}"; }
+if row command dep; then pass "list_all has command row"; else fail "list_all has command row" "$LA"; fi
+if row skill rev;   then pass "list_all has skill row";   else fail "list_all has skill row" "$LA"; fi
+if row plugin kit;  then pass "list_all has plugin row";  else fail "list_all has plugin row" "$LA"; fi
+# a path resolving as two scopes appears once (dedup_by_path)
+assert_eq "dedup keeps one per path" "1" \
+  "$(printf 'command\there\tdep\t/p/x.md\ncommand\tproject\tdep\t/p/x.md\n' | call dedup_by_path | wc -l | tr -d ' ')"
+
 echo "── unit: render_command ───────────────────"
 RC="$(call render_command deploy 'Deploy helper' '[env]' '' '' 'Deploy $1')"
 assert_has "cmd has desc"  "$RC" "description: Deploy helper"
@@ -79,7 +102,7 @@ fi
 echo "── integration: non-interactive create ────"
 # default type via multi-call symlinks
 BIN="$SB/bin"; mkdir -p "$BIN"
-ln -sf "$CZ" "$BIN/cmdz"; ln -sf "$CZ" "$BIN/sklz"; ln -sf "$CZ" "$BIN/plgz"
+ln -sf "$KITZ" "$BIN/cmdz"; ln -sf "$KITZ" "$BIN/sklz"; ln -sf "$KITZ" "$BIN/plgz"
 
 "$BIN/cmdz" deploy -m 'Deploy $1 to staging' -D 'deploy helper' --dir "$SB/proj" -y >/dev/null 2>&1
 assert_file "cmdz wrote command" "$SB/proj/.claude/commands/deploy.md"
@@ -153,7 +176,7 @@ Generated body for \$ARGUMENTS. MARKER_OK mode=$mode
 OUT
 STUB
 chmod +x "$SB/fakeclaude"
-CZ_CLAUDE_BIN="$SB/fakeclaude" "$BIN/cmdz" gen-cmd -g -i "do a thing" --dir "$SB/proj" -y >/dev/null 2>&1
+KITZ_CLAUDE_BIN="$SB/fakeclaude" "$BIN/cmdz" gen-cmd -g -i "do a thing" --dir "$SB/proj" -y >/dev/null 2>&1
 GF="$SB/proj/.claude/commands/gen-cmd.md"
 assert_file "generate wrote file"     "$GF"
 assert_has  "generated body kept"     "$(cat "$GF" 2>/dev/null)" "MARKER_OK"
@@ -162,26 +185,50 @@ assert_no   "outer fence stripped"    "$(cat "$GF" 2>/dev/null)" '```markdown'
 assert_has  "fresh draft (no revise)" "$(cat "$GF" 2>/dev/null)" "mode=fresh"
 
 echo "── integration: --revise (stubbed claude) ──"
-CZ_CLAUDE_BIN="$SB/fakeclaude" "$BIN/cmdz" rev-cmd -g -i "do a thing" --revise "shorter" --dir "$SB/proj" -y >/dev/null 2>&1
+KITZ_CLAUDE_BIN="$SB/fakeclaude" "$BIN/cmdz" rev-cmd -g -i "do a thing" --revise "shorter" --dir "$SB/proj" -y >/dev/null 2>&1
 RVF="$SB/proj/.claude/commands/rev-cmd.md"
 assert_file "revise wrote file"       "$RVF"
 assert_has  "revise pass happened"    "$(cat "$RVF" 2>/dev/null)" "mode=revised"
 
 echo "── integration: --doctor ──────────────────"
-DOUT="$("$CZ" --doctor 2>&1)"
+DOUT="$("$KITZ" --doctor 2>&1)"
 assert_has "doctor lists deps"   "$DOUT" "dependencies:"
 assert_has "doctor shows fzf"    "$DOUT" "fzf"
 assert_has "doctor shows scopes" "$DOUT" "scopes resolved from"
 assert_has "doctor shows model"  "$DOUT" "generation model:"
 
 echo "── integration: --yes guards ──────────────"
-"$CZ" --type command -y --dir "$SB/proj" >/dev/null 2>&1
+"$KITZ" --type command -y --dir "$SB/proj" >/dev/null 2>&1
 assert_code "yes w/o name fails" "1" "$?"
+
+echo "── integration: picker copy + delete ──────"
+# clipboard stub captures whatever is piped to it.
+printf '#!/bin/sh\ncat > "%s"\n' "$SB/clip.out" > "$SB/fakeclip"; chmod +x "$SB/fakeclip"
+"$BIN/cmdz" trash-me -m 'BODY_TO_COPY' --dir "$SB/proj" -y >/dev/null 2>&1
+CP="$SB/proj/.claude/commands/trash-me.md"
+# copy: __copy subcommand + internal_copy honour the clipboard stub
+KITZ_CLIP="$SB/fakeclip" "$BIN/cmdz" __copy "$CP" >/dev/null 2>&1
+assert_has "ctrl-y copies file contents" "$(cat "$SB/clip.out" 2>/dev/null)" "BODY_TO_COPY"
+# reveal: __reveal hands the file path to the file-manager stub
+printf '#!/bin/sh\nprintf "%%s" "$1" > "%s"\n' "$SB/reveal.out" > "$SB/fakereveal"; chmod +x "$SB/fakereveal"
+KITZ_REVEAL="$SB/fakereveal" "$BIN/cmdz" __reveal "$CP" >/dev/null 2>&1
+assert_eq "ctrl-o reveals the file path" "$CP" "$(cat "$SB/reveal.out" 2>/dev/null)"
+rm -f "$SB/reveal.out"
+KITZ_REVEAL="$SB/fakereveal" "$BIN/cmdz" __reveal "$SB/proj/.claude/commands/gone.md" >/dev/null 2>&1
+if [ -f "$SB/reveal.out" ]; then fail "ctrl-o no-op on missing file"; else pass "ctrl-o no-op on missing file"; fi
+# delete a command = remove just the file
+call do_remove command "$CP"
+if [ -e "$CP" ]; then fail "ctrl-x deletes command file"; else pass "ctrl-x deletes command file"; fi
+# delete a skill = remove the whole skill dir, not just SKILL.md
+"$BIN/sklz" trash-skill -D 'x' --dir "$SB/proj" -y >/dev/null 2>&1
+SK="$SB/proj/.claude/skills/trash-skill"
+call do_remove skill "$SK/SKILL.md"
+if [ -d "$SK" ]; then fail "ctrl-x deletes whole skill dir"; else pass "ctrl-x deletes whole skill dir"; fi
 
 echo "── lint: shellcheck (if present) ──────────"
 if command -v shellcheck >/dev/null 2>&1; then
-  if shellcheck -s sh "$CZ" "$HERE/../install.sh" >"$SB/sc.txt" 2>&1; then
-    pass "shellcheck clean (cz + install.sh)"
+  if shellcheck -s sh "$KITZ" "$HERE/../install.sh" >"$SB/sc.txt" 2>&1; then
+    pass "shellcheck clean (kitz + install.sh)"
   else
     fail "shellcheck" "$(cat "$SB/sc.txt")"
   fi

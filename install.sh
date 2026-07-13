@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
-# Install cz + its three muscle-memory aliases (cmdz/sklz/plgz) into PATH.
+# Install kitz + its three muscle-memory aliases (cmdz/sklz/plgz) into PATH.
 # Idempotent: re-run any time. Uninstall: pass --uninstall.
 set -eu
 
-SRC="$(cd "$(dirname "$0")" && pwd)/bin/cz"
-NAMES="cz cmdz sklz plgz"
+SRC="$(cd "$(dirname "$0")" && pwd)/bin/kitz"
+NAMES="kitz cmdz sklz plgz"
 
 # Pick a bin dir already on PATH, preferring a user-writable one.
 pick_bindir() {

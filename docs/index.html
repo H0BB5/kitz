@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kitz — onboarding</title>
+<style>
+  :root{
+    --bg:#0c0e12; --panel:#13161c; --panel2:#171b22; --line:#262c36;
+    --ink:#e7ecf3; --dim:#9aa6b5; --faint:#6b7689;
+    --gold:#f3b13b; --teal:#4fd1c5; --green:#5ad17f; --red:#ff6b6b; --violet:#a78bfa;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  code,kbd,pre{font-family:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace}
+  .wrap{max-width:880px;margin:0 auto;padding:0 22px 120px}
+  header{padding:64px 0 28px;border-bottom:1px solid var(--line)}
+  .logo{font-size:46px;font-weight:800;letter-spacing:-1.5px;margin:0}
+  .logo .t{color:var(--gold)}
+  .tag{color:var(--dim);font-size:19px;margin:10px 0 0}
+  .pitch{margin:26px 0 0;padding:18px 20px;background:linear-gradient(180deg,#15181f,#11141a);
+    border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:var(--radius);font-size:17px}
+  .pitch b{color:var(--gold)}
+  nav{position:sticky;top:0;z-index:5;background:rgba(12,14,18,.85);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);margin:0 -22px 0;padding:12px 22px;display:flex;gap:18px;flex-wrap:wrap}
+  nav a{color:var(--dim);text-decoration:none;font-size:13px;letter-spacing:.3px;text-transform:uppercase}
+  nav a:hover{color:var(--gold)}
+  h2{font-size:13px;letter-spacing:1.6px;text-transform:uppercase;color:var(--faint);
+    margin:54px 0 14px;font-weight:700}
+  h3{font-size:20px;margin:30px 0 8px;color:var(--ink)}
+  p{color:var(--dim)} p strong,li strong{color:var(--ink)}
+  a{color:var(--teal)}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0}
+  @media(max-width:680px){.grid{grid-template-columns:1fr}nav{gap:12px}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .card .n{font-family:ui-monospace,monospace;color:var(--gold);font-weight:700;font-size:15px}
+  .card .d{color:var(--dim);font-size:14px;margin-top:4px}
+  .card .p{color:var(--faint);font-size:12px;margin-top:8px;font-family:ui-monospace,monospace}
+  pre{background:#0a0c10;border:1px solid var(--line);border-radius:10px;padding:0;overflow:auto;margin:14px 0}
+  pre .bar{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);background:#0f1217}
+  pre .bar i{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .r{background:#ff5f56}.y{background:#ffbd2e}.g{background:#27c93f}
+  pre .bar span{margin-left:8px;color:var(--faint);font-size:12px;font-family:ui-monospace,monospace}
+  pre code{display:block;padding:14px 16px;color:#d7e0ec;font-size:13.5px;line-height:1.7;white-space:pre}
+  .cm{color:var(--faint)} .fl{color:var(--teal)} .st{color:var(--green)} .pr{color:var(--gold)}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;
+    padding:1px 7px;font-size:13px;color:var(--ink)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--faint);font-weight:600;font-size:12px;letter-spacing:.5px;text-transform:uppercase}
+  td code{color:var(--gold);font-size:13px}
+  .note{border:1px solid var(--line);border-left:3px solid var(--teal);background:#0f1419;
+    padding:14px 16px;border-radius:10px;margin:16px 0;font-size:14.5px;color:var(--dim)}
+  .note.honest{border-left-color:var(--violet)}
+  .note b{color:var(--ink)}
+  .step{display:flex;gap:14px;margin:18px 0;align-items:flex-start}
+  .step .num{flex:none;width:28px;height:28px;border-radius:50%;background:var(--panel2);
+    border:1px solid var(--line);color:var(--gold);font-weight:700;display:grid;place-items:center;font-size:14px}
+  .step .body{flex:1}.step .body h3{margin-top:0}
+  .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:999px;
+    padding:2px 10px;font-size:12px;color:var(--dim);font-family:ui-monospace,monospace}
+  footer{margin-top:70px;padding-top:22px;border-top:1px solid var(--line);color:var(--faint);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1 class="logo">kitz <span class="t">🔱</span></h1>
+  <p class="tag">Capture Claude Code commands, skills &amp; plugins — on the fly.</p>
+  <div class="pitch">
+    You keep telling Claude the same thing and think <i>"this should be a <code>/command</code>."</i>
+    But stopping to recall the file format, the right folder, and writing the prompt kills the impulse.
+    <b>kitz collapses that to one word</b> — capture the idea, or just describe it and let Claude write the whole thing.
+  </div>
+</header>
+
+<nav>
+  <a href="#what">What</a>
+  <a href="#install">Install</a>
+  <a href="#test">Test here</a>
+  <a href="#modes">Modes</a>
+  <a href="#scopes">Scopes</a>
+  <a href="#triggers">Triggers</a>
+  <a href="#ref">Reference</a>
+</nav>
+
+<section id="what">
+  <h2>What it is</h2>
+  <p>A Claude Code <code>/command</code> or skill is just a markdown file in a <code>.claude/</code> folder.
+  kitz writes that file for you: pick a name, pick where it goes, done. <strong>One engine, three muscle-memory
+  names</strong> — the name picks the type, so there's no extra step.</p>
+  <div class="grid">
+    <div class="card"><div class="n">cmdz</div><div class="d">a slash command</div><div class="p">.claude/commands/&lt;name&gt;.md → /name</div></div>
+    <div class="card"><div class="n">sklz</div><div class="d">a skill (auto-triggered)</div><div class="p">.claude/skills/&lt;name&gt;/SKILL.md</div></div>
+    <div class="card"><div class="n">plgz</div><div class="d">a plugin scaffold</div><div class="p">.claude/plugins/&lt;name&gt;/</div></div>
+  </div>
+  <p><strong>Bare <code>kitz</code> is the home dashboard</strong> — run it in a terminal and you get one
+  cross-type list of everything you've made (commands, skills, plugins, every scope) with a live preview.
+  <code>enter</code> edits · <code>ctrl-y</code> copies · <code>ctrl-o</code> reveals it in Finder · <code>ctrl-x</code> deletes ·
+  <code>ctrl-n</code> makes a new one · <code>ctrl-g</code> drafts one with Claude. In a script or pipe it stays a plain umbrella
+  (<code>kitz --doctor / --help / --version</code>), so nothing that shells out to it breaks.</p>
+</section>
+
+<section id="install">
+  <h2>Install</h2>
+
+  <h3>Option A · Homebrew <span class="pill">shareable</span></h3>
+  <p>The clean, reinstallable path once the tap is published to GitHub:</p>
+  <pre><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>brew</span></div><code><span class="pr">brew</span> install h0bb5/tap/kitz   <span class="cm"># installs kitz, cmdz, sklz, plgz</span></code></pre>
+  <div class="note"><b>One-time publish first.</b> Uses one shared tap (<code>h0bb5/homebrew-tap</code>) for all your tools.
+  Push this repo + tag it (<code>git tag v0.1.0 &amp;&amp; git push --tags</code>), run <code>./release.sh v0.1.0</code>
+  to get the <code>url</code>/<code>sha256</code>, paste those into <code>homebrew/kitz.rb</code>, and push that file to
+  <code>h0bb5/homebrew-tap</code> at <code>Formula/kitz.rb</code>. Until then, use Option B.</div>
+
+  <h3>Option B · Local <span class="pill">works right now</span></h3>
+  <p>Symlinks the four commands into your PATH. This is already done on this machine.</p>
+  <pre><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>sh</span></div><code><span class="pr">sh</span> ~/Projects/kitz/install.sh        <span class="cm"># re-run any time; idempotent</span>
+<span class="pr">sh</span> ~/Projects/kitz/install.sh --uninstall</code></pre>
+  <p>Needs <code>fzf</code> (pickers). <code>bat</code> (preview), <code>$EDITOR</code>, and <code>claude</code> (for the ghostwriter) are optional.</p>
+</section>
+
+<section id="test">
+  <h2>Test it on this machine</h2>
+
+  <div class="step"><div class="num">1</div><div class="body">
+    <h3>Confirm your setup</h3>
+    <pre><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>kitz --doctor</span></div><code><span class="pr">kitz</span> <span class="fl">--doctor</span>   <span class="cm"># deps, editor, model, and exactly which folder each scope writes to</span></code></pre>
+  </div></div>
+
+  <div class="step"><div class="num">2</div><div class="body">
+    <h3>Preview a command (writes nothing)</h3>
+    <p>The <code>-n</code> dry-run shows the file it <em>would</em> create.</p>
+    <pre><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>cmdz</span></div><code><span class="pr">cmdz</span> hello <span class="fl">-m</span> <span class="st">'Say hi to $ARGUMENTS'</span> <span class="fl">-n</span></code></pre>
+  </div></div>
+
+  <div class="step"><div class="num">3</div><div class="body">
+    <h3>Actually save one</h3>
+    <p>Drop <code>-n</code>, add a scope and <code>-y</code> (no prompts).</p>
+    <pre><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>cmdz</span></div><code><span class="pr">cmdz</span> hello <span class="fl">-m</span> <span class="st">'Say hi to $ARGUMENTS'</span> <span class="fl">-s</span> user <span class="fl">-y</span>
+<span class="cm"># → ~/.claude/commands/hello.md</span></code></pre>
+  </div></div>
+
+  <div class="step"><div class="num">4</div><div class="body">
+    <h3>Let Claude write one ✦</h3>
+    <p>Describe it; Claude drafts the whole file in ~10s, then it opens in your editor to review.</p>
+    <pre><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>cmdz -g</span></div><code><span class="pr">cmdz</span> standup <span class="fl">-g</span> <span class="fl">-i</span> <span class="st">"summarize yesterday from git log, list today's plan by priority"</span></code></pre>
+  </div></div>
+
+  <div class="step"><div class="num">5</div><div class="body">
+    <h3>Use it in Claude</h3>
+    <p>New commands appear after a session reload (<code>/clear</code> or a fresh session). Then:</p>
+    <pre><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>claude</span></div><code>/hello world
+/standup</code></pre>
+  </div></div>
+
+  <div class="note"><b>Inside a Claude Code session?</b> Prefix any of the above with <code>!</code> to run it in your shell
+  (e.g. <code>!cmdz hello -m '…' -n</code>). Handy, but see the honest note under <a href="#triggers">Triggers</a> — the
+  terminal isn't where kitz earns its keep.</div>
+</section>
+
+<section id="modes">
+  <h2>Two modes, three speeds</h2>
+  <table>
+    <tr><th>Speed</th><th>Command</th><th>Prompts</th></tr>
+    <tr><td>One-shot</td><td><code>cmdz x -m '…' -s project -y</code></td><td>0</td></tr>
+    <tr><td>Quick</td><td><code>cmdz x</code></td><td>editor opens → pick scope</td></tr>
+    <tr><td>Ghostwrite</td><td><code>cmdz x -g -i '…'</code></td><td>Claude drafts → refine → save</td></tr>
+  </table>
+  <p>In ghostwrite mode the <strong>refine loop</strong> lets you <em>regenerate</em> or <em>tweak with a note</em>
+  (Claude revises its own draft) with a live preview, before you commit. Non-interactive variant:
+  <code>--revise "make it shorter"</code>.</p>
+  <p>Run <code>cmdz</code> / <code>sklz</code> / <code>plgz</code> with <strong>no name</strong> and you get a browser of
+  what already exists, with a live preview. In it: <code>enter</code> edits · <code>ctrl-y</code> copies the file's
+  contents to your clipboard · <code>ctrl-o</code> reveals it in Finder · <code>ctrl-x</code> deletes it (skills/plugins remove the whole dir; asks first).
+  Modifier keys, not bare <code>c</code>/<code>x</code> — typing filters the list.</p>
+</section>
+
+<section id="scopes">
+  <h2>Scopes — the "where"</h2>
+  <table>
+    <tr><th>Flag</th><th>Writes to</th><th>Use when</th></tr>
+    <tr><td><code>-s user</code></td><td>~/.claude</td><td>you want it everywhere</td></tr>
+    <tr><td><code>-s project</code></td><td>nearest repo's .claude</td><td>it's specific to this codebase</td></tr>
+    <tr><td><code>-s workspace</code></td><td>monorepo root's .claude</td><td>shared across a monorepo</td></tr>
+    <tr><td><code>-s here</code></td><td>$PWD/.claude</td><td>exactly where you stand</td></tr>
+  </table>
+  <p>Leave <code>-s</code> off and you get a picker with the resolved path next to each. Or target any folder
+  directly: <code>--dir &lt;path&gt;</code>.</p>
+</section>
+
+<section id="triggers">
+  <h2>Triggers — the real flow</h2>
+  <p>The point of kitz isn't the terminal — it's capturing a command <strong>from anywhere, when you're not already
+  in a Claude session.</strong> Snippets live in <code>~/Projects/kitz/integrations/</code>.</p>
+
+  <h3>tmux <span class="pill">prefix + G = ghostwrite popup</span></h3>
+  <pre><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>~/.tmux.conf</span></div><code><span class="cm"># add these, then: tmux source-file ~/.tmux.conf</span>
+bind-key C display-popup -E -w 80% -h 80% <span class="st">"cmdz"</span>    <span class="cm"># capture a command</span>
+bind-key G display-popup -E -w 80% -h 80% <span class="st">"cmdz -g"</span> <span class="cm"># Claude drafts it</span></code></pre>
+
+  <h3>nvim <span class="pill">:KitzGen — selection becomes the brief</span></h3>
+  <pre><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>init.lua</span></div><code><span class="pr">require</span>(<span class="st">'kitz'</span>).setup()   <span class="cm"># after copying integrations/nvim/kitz.lua onto your runtimepath</span>
+<span class="cm"># :KitzGen  → ghostwrite · visual-select a description, :KitzGen → Claude drafts it</span></code></pre>
+
+  <h3>Raycast <span class="pill">keystroke from anywhere</span></h3>
+  <p>Copy <code>integrations/raycast/*.sh</code> into your Raycast script-commands folder
+  (<code>~/Documents/RaycastScripts</code>). "Draft Claude Artifact (AI)" takes a name + brief + scope and Claude writes it.</p>
+
+  <div class="note honest"><b>The honest bit.</b> Running kitz with <code>!</code> inside Claude Code is barely faster than just
+  asking Claude "make me a /standup command." Its reason to exist is the triggers above — a command spun up in the 5 seconds
+  before the idea evaporates, without context-switching into a session. <b>That's the part worth testing.</b> If
+  <kbd>prefix</kbd>+<kbd>G</kbd> fits your muscle memory, kitz was worth building. If it doesn't, it wasn't.</div>
+</section>
+
+<section id="ref">
+  <h2>Reference</h2>
+  <table>
+    <tr><th>Flag</th><th>Does</th></tr>
+    <tr><td><code>-g, --generate</code></td><td>Claude ghostwrites the body</td></tr>
+    <tr><td><code>-i, --intent &lt;t&gt;</code></td><td>the generation brief (what it should do)</td></tr>
+    <tr><td><code>--revise &lt;note&gt;</code></td><td>draft, then revise once with this note</td></tr>
+    <tr><td><code>-m / -M &lt;file&gt;</code></td><td>body text / body from a file (skips editor)</td></tr>
+    <tr><td><code>-D &lt;t&gt; · -a &lt;hint&gt;</code></td><td>frontmatter description · argument-hint</td></tr>
+    <tr><td><code>-s &lt;scope&gt; · --dir &lt;p&gt;</code></td><td>where to write</td></tr>
+    <tr><td><code>-y · -n · -f</code></td><td>no-prompts · dry-run · overwrite</td></tr>
+    <tr><td><code>-l, --list · --doctor</code></td><td>list artifacts · health check</td></tr>
+    <tr><td><code>--gen-model &lt;m&gt;</code></td><td>generation model (default claude-sonnet-4-6)</td></tr>
+  </table>
+  <p>Full help: <code>kitz --help</code>. Tests: <code>sh ~/Projects/kitz/test/run.sh</code> (73, shellcheck-gated).</p>
+</section>
+
+<footer>
+  kitz v0.1.0 · ~/Projects/kitz · MIT · made for capturing ideas before they evaporate.
+</footer>
+
+</div>
+</body>
+</html>
