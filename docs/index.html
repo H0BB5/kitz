@@ -103,7 +103,8 @@
   <p><strong>Bare <code>kitz</code> is the home dashboard</strong> — run it in a terminal and you get one
   cross-type list of everything you've made (commands, skills, plugins, every scope) with a live preview.
   <code>enter</code> edits · <code>ctrl-y</code> copies · <code>ctrl-o</code> reveals it in Finder · <code>ctrl-x</code> deletes ·
-  <code>ctrl-n</code> makes a new one · <code>ctrl-g</code> drafts one with Claude. In a script or pipe it stays a plain umbrella
+  <code>ctrl-n</code> makes a new one · <code>ctrl-g</code> drafts one with Claude. Copying or revealing flashes a
+  <code>✓</code> confirmation in the header. In a script or pipe it stays a plain umbrella
   (<code>kitz --doctor / --help / --version</code>), so nothing that shells out to it breaks.</p>
 </section>
 
@@ -232,7 +233,7 @@ bind-key G display-popup -E -w 80% -h 80% <span class="st">"cmdz -g"</span> <spa
     <tr><td><code>-l, --list · --doctor</code></td><td>list artifacts · health check</td></tr>
     <tr><td><code>--gen-model &lt;m&gt;</code></td><td>generation model (default claude-sonnet-4-6)</td></tr>
   </table>
-  <p>Full help: <code>kitz --help</code>. Tests: <code>sh ~/Projects/kitz/test/run.sh</code> (73, shellcheck-gated).</p>
+  <p>Full help: <code>kitz --help</code>. Tests: <code>sh ~/Projects/kitz/test/run.sh</code> (79, shellcheck-gated).</p>
 </section>
 
 <footer>

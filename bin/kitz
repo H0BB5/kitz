@@ -131,6 +131,19 @@ render() {
 # ---------------------------------------------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# _ver_ge_030 <version> : true if a "MAJOR.MINOR[.PATCH]" string is >= 0.30 (pure).
+_ver_ge_030() {
+  case "$1" in ''|*[!0-9.]*) return 1 ;; esac
+  _maj="${1%%.*}"; _rest="${1#*.}"; _min="${_rest%%.*}"
+  [ "${_maj:-0}" -gt 0 ] && return 0
+  [ "${_min:-0}" -ge 30 ]
+}
+
+# fzf_confirms: true if this fzf supports the change-header action (>= 0.30, 2022).
+# Older builds error on an unknown action, so the "✓ copied…" confirmation is
+# only wired in when the version clears the bar — otherwise it degrades to silent.
+fzf_confirms() { _ver_ge_030 "$(fzf --version 2>/dev/null | awk '{print $1}')"; }
+
 # clipboard_cmd -> the platform "copy stdin to clipboard" command (empty if none).
 clipboard_cmd() {
   if   have pbcopy;   then printf 'pbcopy'
@@ -259,16 +272,23 @@ pick_name() {
   # $f is set and expanded inside the fzf-spawned preview shell, not here.
   # shellcheck disable=SC2016
   _preview='f={2}; if command -v bat >/dev/null 2>&1; then bat --style=plain --color=always "$f" 2>/dev/null; else cat "$f" 2>/dev/null; fi'
-  # ctrl-y copies the highlighted artifact; ctrl-x deletes it and reloads the list.
+  # ctrl-y/ctrl-o are silent, so each chains change-header to flash a "✓ copied…"
+  # confirmation (prepended to the hint line); ctrl-x's reload is its own feedback.
   # (Bare c/x can't be used — typing filters the list in fzf.) $_self re-invokes
   # this same engine; $1 (the type) drives whole-dir removal for skills/plugins.
   _self="${KITZ_SELF:-kitz}"
+  _hints='enter edit · ctrl-y copy · ctrl-o reveal · ctrl-x delete'
+  _cy="ctrl-y:execute-silent($_self __copy {2})"
+  _co="ctrl-o:execute-silent($_self __reveal {2})"
+  if fzf_confirms; then
+    _cy="$_cy+change-header(✓ copied {1} to clipboard  ·  $_hints)"
+    _co="$_co+change-header(✓ revealed {1} in Finder  ·  $_hints)"
+  fi
   _out="$(list_artifacts "$1" "$2" |
     fzf --prompt="$1 name ▸ " --height=70% --reverse --no-multi --print-query \
         --delimiter='\t' --with-nth=1 \
-        --header="enter edit · ctrl-y copy · ctrl-o reveal · ctrl-x delete" \
-        --bind="ctrl-y:execute-silent($_self __copy {2})" \
-        --bind="ctrl-o:execute-silent($_self __reveal {2})" \
+        --header="$_hints" \
+        --bind="$_cy" --bind="$_co" \
         --bind="ctrl-x:execute($_self __delete $1 {2})+reload($_self --list $1)" \
         --preview="$_preview" --preview-window='right,60%' || true)"
   # line1 = typed query; line2 (if any) = selected "name<TAB>path"
@@ -296,13 +316,21 @@ home_tui() {
   _self="${KITZ_SELF:-kitz}"
   # shellcheck disable=SC2016
   _preview='f={4}; if command -v bat >/dev/null 2>&1; then bat --style=plain --color=always "$f" 2>/dev/null; else cat "$f" 2>/dev/null; fi'
+  # ctrl-y/ctrl-o flash a "✓ copied…" confirmation via change-header ({3}=name),
+  # where supported; ctrl-x's reload is its own feedback.
+  _hints='enter edit · ctrl-y copy · ctrl-o reveal · ctrl-x delete · ctrl-n new · ctrl-g draft'
+  _cy="ctrl-y:execute-silent($_self __copy {4})"
+  _co="ctrl-o:execute-silent($_self __reveal {4})"
+  if fzf_confirms; then
+    _cy="$_cy+change-header(✓ copied {3} to clipboard  ·  $_hints)"
+    _co="$_co+change-header(✓ revealed {3} in Finder  ·  $_hints)"
+  fi
   _out="$(list_all "$PWD" |
     fzf --prompt='kitz ▸ ' --height=90% --reverse --no-multi --print-query \
         --expect=ctrl-n,ctrl-g \
         --delimiter='\t' --with-nth='1,2,3' \
-        --header='enter edit · ctrl-y copy · ctrl-o reveal · ctrl-x delete · ctrl-n new · ctrl-g draft' \
-        --bind="ctrl-y:execute-silent($_self __copy {4})" \
-        --bind="ctrl-o:execute-silent($_self __reveal {4})" \
+        --header="$_hints" \
+        --bind="$_cy" --bind="$_co" \
         --bind="ctrl-x:execute($_self __delete {1} {4})+reload($_self __lsall)" \
         --preview="$_preview" --preview-window='right,55%' || true)"
   # With --print-query + --expect: line1=query, line2=key (empty on Enter), line3=row.

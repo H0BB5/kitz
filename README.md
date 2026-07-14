@@ -51,7 +51,8 @@ kitz
 ```
 
 Bare `kitz` opens the **home dashboard** - one list of every command, skill,
-and plugin across all scopes, with a live preview:
+and plugin across all scopes, with a live preview. Copying or revealing flashes
+a `✓` confirmation in the header:
 
 | Key | Does |
 |-----|------|
@@ -98,6 +99,6 @@ cmdz scope-creep -g                 # interactive: prompts 'what should it do?'
 ## Develop
 
 ```sh
-sh test/run.sh    # 73 pure-shell assertions, no TTY needed (claude is stubbed)
+sh test/run.sh    # 79 pure-shell assertions, no TTY needed (claude is stubbed)
 ```
 Architecture and rationale: see [DESIGN.md](./DESIGN.md).
