@@ -63,6 +63,9 @@ a `✓` confirmation in the header:
 | `ctrl-n` | create a new one (pick type → name) |
 | `ctrl-g` | draft a new one with Claude |
 
+Scroll the preview with `shift-↑`/`shift-↓` (by line) or `ctrl-u`/`ctrl-d` (by
+page) - the mouse wheel scrolls it too.
+
 In a script or pipe (or without `fzf`) `kitz` stays a plain umbrella and prints
 help, so nothing that shells out to it breaks. The per-type `cmdz`/`sklz`/`plgz`
 name picker works the same way - type a new name + Enter to create, or highlight

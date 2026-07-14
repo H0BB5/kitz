@@ -131,18 +131,30 @@ render() {
 # ---------------------------------------------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# _ver_ge_030 <version> : true if a "MAJOR.MINOR[.PATCH]" string is >= 0.30 (pure).
-_ver_ge_030() {
+# _ver_ge <version> <min-minor> : true if a "MAJOR.MINOR[.PATCH]" string is at or
+# above 0.<min-minor> (or major >= 1). Pure; gates fzf actions by capability.
+_ver_ge() {
   case "$1" in ''|*[!0-9.]*) return 1 ;; esac
   _maj="${1%%.*}"; _rest="${1#*.}"; _min="${_rest%%.*}"
   [ "${_maj:-0}" -gt 0 ] && return 0
-  [ "${_min:-0}" -ge 30 ]
+  [ "${_min:-0}" -ge "${2:-0}" ]
 }
 
-# fzf_confirms: true if this fzf supports the change-header action (>= 0.30, 2022).
-# Older builds error on an unknown action, so the "✓ copied…" confirmation is
-# only wired in when the version clears the bar — otherwise it degrades to silent.
-fzf_confirms() { _ver_ge_030 "$(fzf --version 2>/dev/null | awk '{print $1}')"; }
+_fzf_ver() { fzf --version 2>/dev/null | awk '{print $1}'; }
+
+# fzf_confirms: change-header lands in fzf 0.30 (2022). Older builds error on an
+# unknown action, so the "✓ copied…" confirmation is only wired in above the bar.
+fzf_confirms() { _ver_ge "$(_fzf_ver)" 30; }
+
+# scroll_binds -> a --bind spec for scrolling the preview without leaving the
+# list: shift-↑/↓ by line, ctrl-u/ctrl-d by page (the mouse wheel scrolls it too).
+# These are all long-standing fzf actions, so no version gate is needed. We keep
+# ↑/↓ on the list itself: a true "focus the preview" mode would need fzf to remap
+# ↑/↓ at runtime (rebind/unbind), whose behaviour isn't reliable across versions
+# and risks breaking list navigation — not worth the regression.
+scroll_binds() {
+  printf '%s' 'shift-up:preview-up,shift-down:preview-down,ctrl-u:preview-page-up,ctrl-d:preview-page-down'
+}
 
 # clipboard_cmd -> the platform "copy stdin to clipboard" command (empty if none).
 clipboard_cmd() {
@@ -293,6 +305,7 @@ pick_name() {
         --header="$_hints" \
         --bind="$_cy" --bind="$_co" \
         --bind="ctrl-x:execute($_self __delete $1 {2})+reload($_self --list $1)" \
+        --bind="$(scroll_binds)" \
         --preview="$_preview" --preview-window='right,55%,wrap,<90(down,55%,wrap)' || true)"
   # line1 = typed query; line2 (if any) = selected "name<TAB>path"
   _query="$(printf '%s\n' "$_out" | sed -n '1p')"
@@ -337,6 +350,7 @@ home_tui() {
         --header="$_hints" \
         --bind="$_cy" --bind="$_co" \
         --bind="ctrl-x:execute($_self __delete {1} {4})+reload($_self __lsall)" \
+        --bind="$(scroll_binds)" \
         --preview="$_preview" --preview-window='right,50%,wrap,<120(down,55%,wrap)' || true)"
   # With --print-query + --expect: line1=query, line2=key (empty on Enter), line3=row.
   _query="$(printf '%s\n' "$_out" | sed -n '1p')"
