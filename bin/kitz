@@ -147,13 +147,14 @@ _fzf_ver() { fzf --version 2>/dev/null | awk '{print $1}'; }
 fzf_confirms() { _ver_ge "$(_fzf_ver)" 30; }
 
 # scroll_binds -> a --bind spec for scrolling the preview without leaving the
-# list: shift-↑/↓ by line, ctrl-u/ctrl-d by page (the mouse wheel scrolls it too).
-# These are all long-standing fzf actions, so no version gate is needed. We keep
-# ↑/↓ on the list itself: a true "focus the preview" mode would need fzf to remap
-# ↑/↓ at runtime (rebind/unbind), whose behaviour isn't reliable across versions
-# and risks breaking list navigation — not worth the regression.
+# list: shift-↑/↓ by line, PageUp/PageDown by page (the mouse wheel scrolls it
+# too). Deliberately avoids ctrl+arrow (macOS Mission Control) and ctrl-b (tmux
+# prefix). All long-standing fzf actions, so no version gate. ↑/↓ stay on the
+# list: a real "focus the preview" mode would need fzf to remap ↑/↓ at runtime
+# (rebind/unbind), whose behaviour isn't reliable across versions and risks
+# breaking list navigation — not worth the regression.
 scroll_binds() {
-  printf '%s' 'shift-up:preview-up,shift-down:preview-down,ctrl-u:preview-page-up,ctrl-d:preview-page-down'
+  printf '%s' 'shift-up:preview-up,shift-down:preview-down,page-up:preview-page-up,page-down:preview-page-down'
 }
 
 # clipboard_cmd -> the platform "copy stdin to clipboard" command (empty if none).
