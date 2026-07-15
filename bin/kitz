@@ -293,7 +293,7 @@ pick_name() {
   # Hints are terse (^y = ctrl-y) and the preview drops to the bottom on narrow
   # terminals so the header gets the full width instead of being cut off.
   _self="${KITZ_SELF:-kitz}"
-  _hints='↵ edit · ^y copy · ^o reveal · ^x del'
+  _hints='↵ edit · ^y copy · ^o reveal · ^x del · ⇧↑↓ scroll'
   _cy="ctrl-y:execute-silent($_self __copy {2})"
   _co="ctrl-o:execute-silent($_self __reveal {2})"
   if fzf_confirms; then
@@ -337,7 +337,7 @@ home_tui() {
   # Terse hints (^y = ctrl-y) so the header fits; the preview drops to the bottom
   # on narrow terminals so the header gets full width. ctrl-y/ctrl-o flash a
   # "✓ copied…" confirmation via change-header ({3}=name) where supported.
-  _hints='↵ edit · ^y copy · ^o reveal · ^x del · ^n new · ^g draft'
+  _hints='↵ edit · ^y copy · ^o reveal · ^x del · ^n new · ^g draft · ⇧↑↓ scroll'
   _cy="ctrl-y:execute-silent($_self __copy {4})"
   _co="ctrl-o:execute-silent($_self __reveal {4})"
   if fzf_confirms; then
