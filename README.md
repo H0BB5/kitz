@@ -32,7 +32,7 @@ brew install h0bb5/tap/kitz      # installs kitz + cmdz/sklz/plgz
 ```
 Uses one shared tap (`h0bb5/homebrew-tap`) for all your tools - no double-slug,
 and future tools install as `h0bb5/tap/<name>`. Publishing flow (one-time):
-push this repo + tag a release, run `./release.sh v0.1.0` to get the
+push this repo + tag a release, run `./release.sh v0.1.1` to get the
 `url`/`sha256`, paste into `homebrew/kitz.rb`, and push that file to
 `h0bb5/homebrew-tap` at `Formula/kitz.rb`. The repo must be public for the
 tarball URL to resolve. See the header of `homebrew/kitz.rb`.
@@ -102,6 +102,6 @@ cmdz scope-creep -g                 # interactive: prompts 'what should it do?'
 ## Develop
 
 ```sh
-sh test/run.sh    # 79 pure-shell assertions, no TTY needed (claude is stubbed)
+sh test/run.sh    # 81 pure-shell assertions, no TTY needed (claude is stubbed)
 ```
 Architecture and rationale: see [DESIGN.md](./DESIGN.md).
