@@ -9,7 +9,7 @@ class Kitz < Formula
   desc "Capture Claude Code commands/skills/plugins on the fly"
   homepage "https://github.com/H0BB5/kitz"
   url "https://github.com/H0BB5/kitz/archive/refs/tags/v0.1.1.tar.gz"
-  sha256 "657875c646f51d6e181a6987f9f3f64733145e07d441758f3e86098ab1c10a4b"
+  sha256 "bd5ea94f299a2ae8667012f834e8b28f9353e7821f51136a8476440ed5149f5e"
   license "MIT"
   version "0.1.1"
 
