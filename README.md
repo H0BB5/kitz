@@ -61,6 +61,7 @@ a `✓` confirmation in the header:
 | `ctrl-o` | reveal the file in Finder (`open -R`; `xdg-open`/`explorer.exe` elsewhere) |
 | `ctrl-x` | delete it (skills/plugins remove the whole dir; asks first) |
 | `ctrl-n` | create a new one (pick type → name) |
+| `ctrl-v` | create a new one from your clipboard |
 | `ctrl-g` | draft a new one with Claude |
 
 Scroll the preview with `shift-↑`/`shift-↓` (by line) or `PageUp`/`PageDown`
@@ -68,8 +69,17 @@ Scroll the preview with `shift-↑`/`shift-↓` (by line) or `PageUp`/`PageDown`
 
 In a script or pipe (or without `fzf`) `kitz` stays a plain umbrella and prints
 help, so nothing that shells out to it breaks. The per-type `cmdz`/`sklz`/`plgz`
-name picker works the same way - type a new name + Enter to create, or highlight
-an existing artifact to reopen it - with the same `ctrl-y`/`ctrl-o`/`ctrl-x` keys.
+name picker works the same way: **type a new name + Enter to create** (or
+`ctrl-v` to create it from your clipboard), or highlight an existing artifact to
+reopen it - with the same `ctrl-y`/`ctrl-o`/`ctrl-x` keys.
+
+Creating from the clipboard also works from the shell - handy when you've copied
+a skill or command from somewhere and just want to drop it in:
+
+```sh
+sklz my-skill -p           # body = your clipboard, opens the editor to review
+sklz my-skill -p -y        # …or write it straight to disk
+```
 
 ## Ghostwrite with Claude (`-g`) ✦
 
@@ -102,6 +112,6 @@ cmdz scope-creep -g                 # interactive: prompts 'what should it do?'
 ## Develop
 
 ```sh
-sh test/run.sh    # 81 pure-shell assertions, no TTY needed (claude is stubbed)
+sh test/run.sh    # 87 pure-shell assertions, no TTY needed (claude is stubbed)
 ```
 Architecture and rationale: see [DESIGN.md](./DESIGN.md).

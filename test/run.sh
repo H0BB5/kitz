@@ -235,6 +235,22 @@ SK="$SB/proj/.claude/skills/trash-skill"
 call do_remove skill "$SK/SKILL.md"
 if [ -d "$SK" ]; then fail "ctrl-x deletes whole skill dir"; else pass "ctrl-x deletes whole skill dir"; fi
 
+echo "── unit + integration: paste (clipboard -> new) ──"
+# stub the clipboard-read command (KITZ_PASTE) to emit a full skill file.
+printf '#!/bin/sh\nprintf "%%s\\n" "---" "name: pasted" "---" "" "BODY FROM CLIPBOARD"\n' > "$SB/fakepaste"; chmod +x "$SB/fakepaste"
+assert_has "read_clipboard via KITZ_PASTE" "$(KITZ_PASTE="$SB/fakepaste" call read_clipboard)" "BODY FROM CLIPBOARD"
+# --paste create: body is the clipboard verbatim, not wrapped in a template
+KITZ_PASTE="$SB/fakepaste" "$BIN/sklz" from-clip -p --dir "$SB/proj" -y >/dev/null 2>&1
+PF="$SB/proj/.claude/skills/from-clip/SKILL.md"
+assert_file "paste wrote the skill"        "$PF"
+assert_has  "paste = clipboard verbatim"   "$(cat "$PF" 2>/dev/null)" "BODY FROM CLIPBOARD"
+assert_has  "paste keeps pasted name"      "$(cat "$PF" 2>/dev/null)" "name: pasted"
+assert_no   "paste doesn't wrap template"  "$(cat "$PF" 2>/dev/null)" "drives auto-trigger"
+# empty clipboard is refused
+printf '#!/bin/sh\nprintf ""\n' > "$SB/emptypaste"; chmod +x "$SB/emptypaste"
+KITZ_PASTE="$SB/emptypaste" "$BIN/cmdz" no-clip -p --dir "$SB/proj" -y >/dev/null 2>&1
+assert_code "empty clipboard refused" "1" "$?"
+
 echo "── lint: shellcheck (if present) ──────────"
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck -s sh "$KITZ" "$HERE/../install.sh" >"$SB/sc.txt" 2>&1; then

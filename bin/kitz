@@ -167,6 +167,24 @@ clipboard_cmd() {
   fi
 }
 
+# paste_cmd -> the platform "read clipboard to stdout" command (empty if none).
+paste_cmd() {
+  if   have pbpaste;  then printf 'pbpaste'
+  elif have wl-paste; then printf 'wl-paste'
+  elif have xclip;    then printf 'xclip -selection clipboard -o'
+  elif have xsel;     then printf 'xsel --clipboard --output'
+  fi
+}
+
+# read_clipboard -> clipboard contents on stdout (empty if no paste tool).
+read_clipboard() {
+  _paste="${KITZ_PASTE:-$(paste_cmd)}"
+  [ -n "$_paste" ] || return 0
+  # word-split $_paste on purpose (e.g. "xclip -selection clipboard -o").
+  # shellcheck disable=SC2086
+  $_paste 2>/dev/null
+}
+
 # remove_target <type> <listed-path> -> the path to delete (pure).
 # The picker lists a file, but skills/plugins live in a directory we remove whole.
 remove_target() {
@@ -281,19 +299,18 @@ list_all() {
 # pick_name <type> <start>: sets globals RESULT_NAME and RESULT_PATH.
 # RESULT_PATH non-empty => user chose an existing artifact to edit.
 pick_name() {
-  RESULT_NAME=""; RESULT_PATH=""
+  RESULT_NAME=""; RESULT_PATH=""; RESULT_PASTE=""
   # $f is set and expanded inside the fzf-spawned preview shell, not here.
   # shellcheck disable=SC2016
   # (bat won't wrap when piped, so wrapping comes from fzf's own `wrap` below.)
   _preview='f={2}; if command -v bat >/dev/null 2>&1; then bat --style=plain --color=always "$f" 2>/dev/null; else cat "$f" 2>/dev/null; fi'
-  # ctrl-y/ctrl-o are silent, so each chains change-header to flash a "✓ copied…"
-  # confirmation (prepended to the hint line); ctrl-x's reload is its own feedback.
-  # (Bare c/x can't be used - typing filters the list in fzf.) $_self re-invokes
-  # this same engine; $1 (the type) drives whole-dir removal for skills/plugins.
-  # Hints are terse (^y = ctrl-y) and the preview drops to the bottom on narrow
-  # terminals so the header gets the full width instead of being cut off.
+  # The picker is dual-purpose: highlight a row + ↵ edits it; type a fresh name +
+  # ↵ creates it; type a name + ctrl-v creates it from the clipboard (--expect
+  # reports which key accepted). ctrl-y/ctrl-o are silent, so each chains
+  # change-header to flash a "✓ copied…" confirmation. ctrl-x's reload is its own
+  # feedback. (Bare c/x can't be keys - typing filters the list in fzf.)
   _self="${KITZ_SELF:-kitz}"
-  _hints='↵ edit · ^y copy · ^o reveal · ^x del · ⇧↑↓ scroll'
+  _hints='type→new · ^v paste · ↵ edit · ^y copy · ^o reveal · ^x del · ⇧↑↓ scroll'
   _cy="ctrl-y:execute-silent($_self __copy {2})"
   _co="ctrl-o:execute-silent($_self __reveal {2})"
   if fzf_confirms; then
@@ -302,16 +319,20 @@ pick_name() {
   fi
   _out="$(list_artifacts "$1" "$2" |
     fzf --prompt="$1 name ▸ " --height=70% --reverse --no-multi --print-query \
+        --expect=ctrl-v \
         --delimiter='\t' --with-nth=1 \
         --header="$_hints" \
         --bind="$_cy" --bind="$_co" \
         --bind="ctrl-x:execute($_self __delete $1 {2})+reload($_self --list $1)" \
         --bind="$(scroll_binds)" \
         --preview="$_preview" --preview-window='right,55%,wrap,<90(down,55%,wrap)' || true)"
-  # line1 = typed query; line2 (if any) = selected "name<TAB>path"
+  # With --print-query + --expect: line1=query, line2=key (empty on ↵), line3=row.
   _query="$(printf '%s\n' "$_out" | sed -n '1p')"
-  _sel="$(printf '%s\n' "$_out" | sed -n '2p')"
-  if [ -n "$_sel" ]; then
+  _key="$(printf '%s\n'   "$_out" | sed -n '2p')"
+  _sel="$(printf '%s\n'   "$_out" | sed -n '3p')"
+  if [ "$_key" = ctrl-v ]; then
+    RESULT_NAME="$(slugify "$_query")"; RESULT_PASTE=1
+  elif [ -n "$_sel" ]; then
     RESULT_NAME="$(printf '%s' "$_sel" | cut -f1)"
     RESULT_PATH="$(printf '%s' "$_sel" | cut -f2)"
   else
@@ -337,7 +358,7 @@ home_tui() {
   # Terse hints (^y = ctrl-y) so the header fits; the preview drops to the bottom
   # on narrow terminals so the header gets full width. ctrl-y/ctrl-o flash a
   # "✓ copied…" confirmation via change-header ({3}=name) where supported.
-  _hints='↵ edit · ^y copy · ^o reveal · ^x del · ^n new · ^g draft · ⇧↑↓ scroll'
+  _hints='↵ edit · ^y copy · ^o reveal · ^x del · ^n new · ^v paste · ^g draft · ⇧↑↓ scroll'
   _cy="ctrl-y:execute-silent($_self __copy {4})"
   _co="ctrl-o:execute-silent($_self __reveal {4})"
   if fzf_confirms; then
@@ -346,7 +367,7 @@ home_tui() {
   fi
   _out="$(list_all "$PWD" |
     fzf --prompt='kitz ▸ ' --height=90% --reverse --no-multi --print-query \
-        --expect=ctrl-n,ctrl-g \
+        --expect=ctrl-n,ctrl-g,ctrl-v \
         --delimiter='\t' --with-nth='1,2,3' \
         --header="$_hints" \
         --bind="$_cy" --bind="$_co" \
@@ -360,6 +381,8 @@ home_tui() {
   case "$_key" in
     ctrl-n) TYPE="$(choose_type)"; [ -n "$TYPE" ] || exit 0
             NAME="$_query"; return 0 ;;
+    ctrl-v) TYPE="$(choose_type)"; [ -n "$TYPE" ] || exit 0
+            NAME="$_query"; RESULT_PASTE=1; return 0 ;;
     ctrl-g) TYPE="$(choose_type)"; [ -n "$TYPE" ] || exit 0
             NAME="$_query"; GENERATE=1; return 0 ;;
     *)  # plain Enter (edit the highlighted row) or cancel
@@ -558,6 +581,7 @@ OPTIONS
       --gen-model <model>   model for --generate (default claude-sonnet-4-6)
   -m, --message <text>      body (skips editor)
   -M, --message-file <path> body read from a file (skips editor)
+  -p, --paste               create from clipboard (body = your clipboard)
   -D, --description <text>  frontmatter description
   -a, --args <hint>         argument-hint (commands)
       --tools <csv>         allowed-tools
@@ -603,7 +627,7 @@ main() {
 
   TYPE="$(default_type_from_name "$0")"
   NAME=""; SCOPE=""; DIR=""; MESSAGE=""; DESC=""; ARGS=""; TOOLS=""; MODEL=""
-  EDIT=0; YES=0; FORCE=0; DRY_RUN=0; OPEN=0; LIST=0; DOCTOR=0
+  EDIT=0; YES=0; FORCE=0; DRY_RUN=0; OPEN=0; LIST=0; DOCTOR=0; PASTE=0
   GENERATE=0; INTENT=""; GEN_MODEL="${KITZ_GEN_MODEL:-claude-sonnet-4-6}"
   REVISE=""; FINALIZE=editor
 
@@ -627,6 +651,7 @@ main() {
       --tools) TOOLS="$2"; shift ;;
       --model) MODEL="$2"; shift ;;
       -e|--edit) EDIT=1 ;;
+      -p|--paste) PASTE=1 ;;
       -y|--yes) YES=1 ;;
       -f|--force) FORCE=1 ;;
       -n|--dry-run) DRY_RUN=1 ;;
@@ -654,6 +679,7 @@ main() {
   if [ -z "$TYPE" ]; then
     if [ -z "$NAME" ] && [ -t 0 ] && [ -t 1 ] && have fzf; then
       home_tui   # edits/copies/deletes and exits, or sets TYPE(+NAME/GENERATE) to create
+      [ "${RESULT_PASTE:-}" = 1 ] && PASTE=1
     fi
     if [ -z "$TYPE" ]; then
       if [ -z "$NAME" ]; then usage; exit 0; fi
@@ -668,6 +694,7 @@ main() {
     have fzf || die "fzf required for interactive name pick (or pass a name)"
     pick_name "$TYPE" "$PWD"
     NAME="$RESULT_NAME"
+    [ "${RESULT_PASTE:-}" = 1 ] && PASTE=1
   else
     NAME="$(slugify "$NAME")"
   fi
@@ -702,8 +729,11 @@ main() {
     GENERATE=0
   fi
 
-  # content: render from fields, or ghostwrite with Claude.
-  if [ "$GENERATE" = 1 ]; then
+  # content: clipboard (paste), ghostwrite with Claude, or render from fields.
+  if [ "$PASTE" = 1 ]; then
+    CONTENT="$(read_clipboard)"
+    [ -n "$CONTENT" ] || die "clipboard is empty; nothing to paste"
+  elif [ "$GENERATE" = 1 ]; then
     [ -n "$INTENT" ] || INTENT="$MESSAGE"
     [ -n "$INTENT" ] || INTENT="$DESC"
     if [ -z "$INTENT" ] && [ "$YES" != 1 ]; then INTENT="$(prompt_line 'what should it do?')"; fi
@@ -727,7 +757,7 @@ main() {
 
   # finalize in editor (interactive) unless the draft was accepted as-is (save).
   if [ "$YES" != 1 ] && [ "$DRY_RUN" != 1 ] && [ "$FINALIZE" = editor ]; then
-    if [ "$GENERATE" = 1 ] || [ "$EDIT" = 1 ] || [ -z "$MESSAGE" ]; then
+    if [ "$GENERATE" = 1 ] || [ "$EDIT" = 1 ] || [ "$PASTE" = 1 ] || [ -z "$MESSAGE" ]; then
       have "${VISUAL:-${EDITOR:-vi}}" || die "no editor found (set \$EDITOR)"
       _tmpdir="$(mktemp -d)"; _ext=md; [ "$TYPE" = plugin ] && _ext=json
       _draft="$_tmpdir/draft.$_ext"
