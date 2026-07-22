@@ -116,7 +116,7 @@
   <p>The clean, reinstallable path once the tap is published to GitHub:</p>
   <pre><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>brew</span></div><code><span class="pr">brew</span> install h0bb5/tap/kitz   <span class="cm"># installs kitz, cmdz, sklz, plgz</span></code></pre>
   <div class="note"><b>One-time publish first.</b> Uses one shared tap (<code>h0bb5/homebrew-tap</code>) for all your tools.
-  Push this repo + tag it (<code>git tag v0.1.1 &amp;&amp; git push --tags</code>), run <code>./release.sh v0.1.1</code>
+  Push this repo + tag it (<code>git tag v0.1.2 &amp;&amp; git push --tags</code>), run <code>./release.sh v0.1.2</code>
   to get the <code>url</code>/<code>sha256</code>, paste those into <code>homebrew/kitz.rb</code>, and push that file to
   <code>h0bb5/homebrew-tap</code> at <code>Formula/kitz.rb</code>. Until then, use Option B.</div>
 
@@ -234,11 +234,11 @@ bind-key G display-popup -E -w 80% -h 80% <span class="st">"cmdz -g"</span> <spa
     <tr><td><code>-l, --list · --doctor</code></td><td>list artifacts · health check</td></tr>
     <tr><td><code>--gen-model &lt;m&gt;</code></td><td>generation model (default claude-sonnet-4-6)</td></tr>
   </table>
-  <p>Full help: <code>kitz --help</code>. Tests: <code>sh ~/Projects/kitz/test/run.sh</code> (87, shellcheck-gated).</p>
+  <p>Full help: <code>kitz --help</code>. Tests: <code>sh ~/Projects/kitz/test/run.sh</code> (90, shellcheck-gated).</p>
 </section>
 
 <footer>
-  kitz v0.1.1 · ~/Projects/kitz · MIT · made for capturing ideas before they evaporate.
+  kitz v0.1.2 · ~/Projects/kitz · MIT · made for capturing ideas before they evaporate.
 </footer>
 
 </div>
