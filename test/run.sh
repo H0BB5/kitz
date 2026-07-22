@@ -47,6 +47,12 @@ assert_eq "user=HOME"            "$HOME"      "$(call resolve_scope user "$FROM"
 mkdir -p "$SB/fakehome/.claude" "$SB/fakehome/proj/sub"
 assert_eq "project ignores home .claude" "$SB/fakehome/proj/sub" \
   "$(HOME="$SB/fakehome" call resolve_scope project "$SB/fakehome/proj/sub")"
+# the $HOME guard must compare by inode, not string: a same-dir path that differs
+# only as text (trailing slash here; case on a case-insensitive FS in the wild)
+# must still be recognised as $HOME. (Regression: cwd /users vs $HOME /Users.)
+mkdir -p "$SB/fh2/proj/sub"; : > "$SB/fh2/package.json"
+assert_eq "project guard is inode-based, not string" "$SB/fh2/proj/sub" \
+  "$(HOME="$SB/fh2/" call resolve_scope project "$SB/fh2/proj/sub")"
 
 echo "── unit: target_path ──────────────────────"
 assert_eq "cmd path"    "/b/.claude/commands/x.md"            "$(call target_path command /b x)"
@@ -250,6 +256,15 @@ assert_no   "paste doesn't wrap template"  "$(cat "$PF" 2>/dev/null)" "drives au
 printf '#!/bin/sh\nprintf ""\n' > "$SB/emptypaste"; chmod +x "$SB/emptypaste"
 KITZ_PASTE="$SB/emptypaste" "$BIN/cmdz" no-clip -p --dir "$SB/proj" -y >/dev/null 2>&1
 assert_code "empty clipboard refused" "1" "$?"
+
+echo "── integration: editor non-zero exit still saves ──"
+# a real editor can exit non-zero (swap prompt, :cq, plugin) yet still have saved
+# the file; set -e must not abort before write_artifact and drop the user's work.
+printf '#!/bin/sh\nprintf "SAVED ANYWAY\\n" > "$1"\nexit 1\n' > "$SB/badexit"; chmod +x "$SB/badexit"
+EDITOR="$SB/badexit" "$BIN/cmdz" exit-save --dir "$SB/proj" >/dev/null 2>&1
+EF="$SB/proj/.claude/commands/exit-save.md"
+assert_file "editor exit!=0 still writes the file" "$EF"
+assert_has  "editor content is kept"               "$(cat "$EF" 2>/dev/null)" "SAVED ANYWAY"
 
 echo "── lint: shellcheck (if present) ──────────"
 if command -v shellcheck >/dev/null 2>&1; then

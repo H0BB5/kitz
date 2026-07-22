@@ -60,9 +60,12 @@ resolve_scope() {
       elif _p="$(find_up package.json "$_start")"; then :
       elif _p="$(find_up .claude "$_start")"; then :
       else _p="$_start"; fi
-      # Never $HOME — that's the 'user' scope, not a project. (e.g. dotfiles
-      # repos / ~/.claude would otherwise hijack 'project' from any subdir.)
-      if [ "$_p" = "$HOME" ]; then _p="$_start"; fi
+      # Never $HOME - that's the 'user' scope, not a project (e.g. ~/package.json
+      # or ~/.claude would otherwise hijack 'project' from any subdir). Compare by
+      # inode (-ef), not string: on a case-insensitive FS the cwd's case can differ
+      # from $HOME (e.g. /users/you vs /Users/you) and a string match would miss.
+      # shellcheck disable=SC3013
+      if [ "$_p" -ef "$HOME" ]; then _p="$_start"; fi
       printf '%s' "$_p" ;;
     workspace)
       for _m in pnpm-workspace.yaml turbo.json lerna.json nx.json go.work; do
@@ -398,7 +401,10 @@ home_tui() {
 
 open_editor() {
   _ed="${VISUAL:-${EDITOR:-vi}}"
-  "$_ed" "$1"
+  # A non-zero editor exit (swap-file prompt, :cq, a flaky plugin) must NOT gate
+  # the save: under `set -e` a bare failing call would abort before write_artifact
+  # and silently drop the user's work. What was saved to the file is the outcome.
+  "$_ed" "$1" || true
 }
 
 # write_artifact <path> <content>: honours DRY_RUN / FORCE.
